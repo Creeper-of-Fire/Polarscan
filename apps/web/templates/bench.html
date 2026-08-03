@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ p.id }}{% endblock %}
+{% block body %}
+
+{# 顶部固定 navigation bar #}
+<div class="bench-top">
+  <div class="bench-top__nav">
+    {% if prev_id %}
+      <a class="btn btn-nav" href="/bench/{{ prev_id }}">‹ 上一张</a>
+    {% else %}
+      <span class="btn btn-nav btn-disabled">‹ 上一张</span>
+    {% endif %}
+    <span class="bench-top__counter">
+      # <strong>{{ idx + 1 }}</strong> / {{ total }}
+    </span>
+    {% if next_id %}
+      <a class="btn btn-nav" href="/bench/{{ next_id }}">下一张 ›</a>
+    {% else %}
+      <span class="btn btn-nav btn-disabled">下一张 ›</span>
+    {% endif %}
+    {% if next_untagged_id %}
+      <a class="btn btn-jump" href="/bench/{{ next_untagged_id }}/goto/untagged">跳到下一张未打标</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bench-layout">
+
+  {# 左侧: 大图 #}
+  <div class="bench-left">
+    {% if p.assets %}
+      <img class="bench-img" src="/img/{{ p.id }}" alt="{{ p.id }}">
+    {% else %}
+      <div class="bench-img bench-img--empty">no asset</div>
+    {% endif %}
+
+    {# 资产列表 (只读) #}
+    <details class="assets-block">
+      <summary>资产 ({{ p.assets|length }})</summary>
+      <ul class="asset-list">
+        {% for a in p.assets %}
+          <li>
+            <code class="role">{{ a.role }}</code>
+            <code class="path">{{ a.path }}</code>
+            {% if a.captured_at or a.device %}
+              <small>{{ a.captured_at or '?' }} · {{ a.device or '?' }}</small>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  </div>
+
+  {# 右侧: metadata column #}
+  <form method="post" action="/bench/{{ p.id }}" class="bench-right">
+
+    <div class="bench-id-row">
+      <code class="id-display" title="id 是派生的, 改了 shot_date/char 之后此 id 不变">{{ p.id }}</code>
+      <small class="id-hint">派生建议: <code>{{ suggested_id }}</code> (新建时用, 已存在则冻住)</small>
+    </div>
+
+    <div class="field">
+      <label>拍摄日期 (shot_date)</label>
+      <input name="shot_date" type="text" value="{{ p.shot_date or '' }}" placeholder="YYYY-MM-DD">
+    </div>
+
+    <div class="field">
+      <label>tags (逗号分隔; 点击 chip 跳到池编辑; X 删)</label>
+
+      <div class="chip-stream" id="chips">
+        {% for t in p.tags %}
+          {% set parts = t.split(':', 1) %}
+          {% set pfx = parts[0] if ':' in t else 'plain' %}
+          {% set val = parts[1] if ':' in t else t %}
+          <span class="chip chip-{{ pfx }}{% if focus_tag == t %} chip-focus{% endif %}">
+            <a class="chip-body" href="/pool/{{ pfx }}/{{ val }}/edit?return_to=/bench/{{ p.id }}%3Ffocus%3D{{ t|urlencode }}">{{ t }}</a>
+            <button type="button" class="chip-x" data-remove-tag="{{ t }}" title="移除">×</button>
+          </span>
+        {% endfor %}
+        <span class="chip chip-add">+</span>
+      </div>
+
+      <div class="tag-input-row">
+        <input id="tagInput" type="text" autocomplete="off" placeholder="输入 tag (如 char:strawberry), 按 + 加">
+        <button type="button" id="addTagBtn" class="btn btn-add">+ 添加</button>
+      </div>
+
+      {# 自动补全候选 #}
+      <div id="tagSuggest" class="tag-suggest" hidden></div>
+
+      {# quick-add 横排常用 tags (建议性的, 来自历史) #}
+      <div class="quick-tags">
+        {% if char_values %}
+          <span class="qt-label">常用角色:</span>
+          {% for c in char_values[:8] %}
+            <button type="button" class="qt-chip" data-quick="char:{{ c }}">+ char:{{ c }}</button>
+          {% endfor %}
+        {% endif %}
+        {% if shot_values %}
+          <span class="qt-label">shot:</span>
+          {% for c in shot_values[:5] %}
+            <button type="button" class="qt-chip" data-quick="shot:{{ c }}">+ shot:{{ c }}</button>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      {# 隐藏字段真正提交 tags 列表 #}
+      <input type="hidden" name="tags" id="tagsHidden">
+    </div>
+
+    <div class="field">
+      <label>notes</label>
+      <textarea name="notes" rows="6" placeholder="">{{ p.notes }}</textarea>
+    </div>
+
+    <div class="bench-actions">
+      <button type="submit" class="btn btn-primary">💾 保存</button>
+      <a class="btn" href="/bench/{{ p.id }}">取消</a>
+      <span class="spacer"></span>
+      <button type="submit" formaction="/bench/{{ p.id }}/delete" class="btn btn-danger"
+              onclick="return confirm('删除 {{ p.id }}?')">删除这张</button>
+    </div>
+  </form>
+</div>
+
+{# chip 交互 JS: 删 / 加 / 自动补全 #}
+<script>
+(function () {
+  const form = document.querySelector('.bench-right');
+  const chipsEl = document.getElementById('chips');
+  const input = document.getElementById('tagInput');
+  const addBtn = document.getElementById('addTagBtn');
+  const suggestEl = document.getElementById('tagSuggest');
+  const hidden = document.getElementById('tagsHidden');
+
+  // 从 chip 流里抽出当前 tag 列表
+  function currentTags() {
+    return Array.from(chipsEl.querySelectorAll('.chip'))
+      .filter(c => !c.classList.contains('chip-add'))
+      .map(c => c.querySelector('.chip-body').textContent.trim())
+      .filter(t => t && !t.startsWith('+'));
+  }
+
+  function renderChips() {
+    hidden.value = currentTags().join(', ');
+  }
+
+  // 删 chip
+  chipsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip-x');
+    if (btn) {
+      const chip = btn.closest('.chip');
+      chip.remove();
+      renderChips();
+    }
+  });
+
+  // 加 tag
+  function addTag(raw) {
+    raw = raw.trim();
+    if (!raw) return;
+    // 已存在则不重复加
+    const existing = currentTags();
+    if (existing.includes(raw)) return;
+
+    const parts = raw.split(':', 1);
+    const pfx = parts[0];
+    const val = raw.slice(pfx.length + 1);
+
+    const span = document.createElement('span');
+    span.className = 'chip chip-' + pfx;
+    span.innerHTML =
+      '<a class="chip-body" href="/pool/' + pfx + '/' + encodeURIComponent(val) + '/edit?return_to=/bench/{{ p.id|urlencode }}">' + raw + '</a>' +
+      '<button type="button" class="chip-x" data-remove-tag="' + raw + '" title="移除">×</button>';
+    chipsEl.insertBefore(span, chipsEl.lastElementChild);
+    renderChips();
+  }
+
+  addBtn.addEventListener('click', () => {
+    const raw = input.value;
+    addTag(raw);
+    input.value = '';
+    suggestEl.hidden = true;
+    input.focus();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addBtn.click();
+    }
+  });
+
+  // quick tags
+  document.querySelectorAll('.qt-chip').forEach(btn => {
+    btn.addEventListener('click', () => addTag(btn.dataset.quick));
+  });
+
+  // 自动补全 (从 polaroid 的所有 tag + 当前 char/event 池 + 已知 prefix 拼)
+  const allSuggestions = [
+    {% for c in char_values %}'char:{{ c }}',{% endfor %}
+    {% for c in event_values %}'event:{{ c }}',{% endfor %}
+    {% for c in theme_values %}'theme:{{ c }}',{% endfor %}
+    {% for c in collection_values %}'collection:{{ c }}',{% endfor %}
+    {% for c in composite_values %}'composite:{{ c }}',{% endfor %}
+    {% for c in moment_values %}'moment:{{ c }}',{% endfor %}
+    {% for c in shot_values %}'shot:{{ c }}',{% endfor %}
+    {% for c in sig_values %}'sig:{{ c }}',{% endfor %}
+  ].filter(Boolean);
+
+  function renderSuggest(query) {
+    query = query.trim().toLowerCase();
+    if (!query) {
+      suggestEl.hidden = true;
+      suggestEl.innerHTML = '';
+      return;
+    }
+    const matches = allSuggestions
+      .filter(s => s.toLowerCase().includes(query) && !currentTags().includes(s))
+      .slice(0, 8);
+    if (!matches.length) {
+      suggestEl.hidden = true;
+      suggestEl.innerHTML = '';
+      return;
+    }
+    suggestEl.innerHTML = matches.map(m =>
+      '<button type="button" class="suggest-item" data-tag="' + m + '">' + m + '</button>'
+    ).join('');
+    suggestEl.hidden = false;
+  }
+
+  input.addEventListener('input', () => renderSuggest(input.value));
+
+  suggestEl.addEventListener('click', (e) => {
+    const b = e.target.closest('.suggest-item');
+    if (b) {
+      addTag(b.dataset.tag);
+      input.value = '';
+      suggestEl.hidden = true;
+      input.focus();
+    }
+  });
+
+  // 初次同步
+  renderChips();
+})();
+</script>
+
+{% endblock %}

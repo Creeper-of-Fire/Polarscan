@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ prefix }} 池{% endblock %}
+{% block body %}
+
+<h2><code>{{ prefix }}</code> 池 — 已注册 {{ items|length }} 条</h2>
+
+{% if not items %}
+  <p class="hint">还没在这个 prefix 下注册任何 tag. 你可以从工作台给某张拍立得打 <code>{{ prefix }}:xxx</code> 的 tag,
+  系统会自动提议用这些 key. 之后回到这里加元数据 (canonical_name / aliases / notes).</p>
+{% else %}
+<table class="pool-table">
+  <thead>
+    <tr><th>key</th><th>canonical_name</th><th>aliases</th><th>notes</th><th>其他</th><th>被 N 张用</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for it in items %}
+      {% set m = it.meta %}
+      <tr>
+        <td><code class="key">{{ it.key }}</code></td>
+        <td>{{ m.canonical_name or '—' }}</td>
+        <td>
+          {% if m.aliases %}
+            {% for a in m.aliases %}<span class="tag">{{ a }}</span>{% endfor %}
+          {% else %}—{% endif %}
+        </td>
+        <td><small>{{ (m.notes or '') | truncate(80) }}</small></td>
+        <td><small>
+          {% for k, v in m.items() %}
+            {% if k not in ('canonical_name','aliases','notes') %}
+              <code>{{ k }}={{ v }}</code>
+            {% endif %}
+          {% endfor %}
+        </small></td>
+        <td>{{ it.count }}</td>
+        <td><a class="btn btn-mini" href="/pool/{{ prefix }}/{{ it.key }}/edit">编辑</a></td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p><a class="btn" href="/">← 回到工作台</a></p>
+
+{% endblock %}

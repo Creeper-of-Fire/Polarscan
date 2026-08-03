@@ -16,6 +16,7 @@ from .thumb import (
     thumb_path,
 )
 from .resolver import resolve_asset_path
+from .id_gen import make_polaroid_id, parse_primary_char
 
 __all__ = [
     "Polaroid",
@@ -33,4 +34,6 @@ __all__ = [
     "get_or_make_thumb",
     "thumb_path",
     "resolve_asset_path",
+    "make_polaroid_id",
+    "parse_primary_char",
 ]

@@ -1,43 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Polarscan - 新建{% endblock %}
+{% block title %}新建{% endblock %}
 {% block body %}
+
 <h2>新建拍立得</h2>
-{% if error %}<p class="err">{{ error }}</p>{% endif %}
 
 <form method="post" class="form-new">
-  <fieldset>
-    <legend>id（不可变，slug 形态）</legend>
+
+  <div class="field">
+    <label>id (派生: shot_date + 第一个char + 6位hex; 已存在的不自动重派)</label>
     <input name="pid" type="text" required value="{{ default_pid }}"
-           placeholder="例: shenshan_om_cd_2026-07-18_pair_001">
-  </fieldset>
-
-  <fieldset>
-    <legend>第一个 asset 路径</legend>
-    <input name="asset_path" type="text" required value="{{ default_asset }}" size="60"
-           placeholder="例: 2026.07.18/img20260720_19253733.png  (相对 library_root 或绝对)">
-  </fieldset>
-
-  <fieldset>
-    <legend>tags（逗号分隔，可后期补）</legend>
-    <input name="tags" type="text" size="60"
-           placeholder="例: event:shenshan_3rd_om_cd, char:strawberry, char:hime, shot:pair">
-  </fieldset>
-
-  <fieldset>
-    <legend>shot_date (YYYY-MM-DD, 可空)</legend>
-    <input name="shot_date" type="text" placeholder="2026-01-01">
-  </fieldset>
-
-  <fieldset>
-    <legend>notes</legend>
-    <textarea name="notes" rows="4" cols="60"></textarea>
-  </fieldset>
-
-  <div class="actions">
-    <button type="submit">创建</button>
-    <a href="/"><button type="button" class="cancel">取消</button></a>
+           pattern="[a-z0-9_\-]+" title="只允许小写字母数字下划线连字符">
+    <small class="hint">根据下面的 shot_date 和 primary_char 自动派生</small>
   </div>
+
+  <div class="field">
+    <label>拍摄日期 (shot_date)</label>
+    <input id="new_shot_date" name="shot_date" type="text" value="{{ default_shot_date }}" placeholder="YYYY-MM-DD">
+  </div>
+
+  <div class="field">
+    <label>第一个角色 (决定 id 派生)</label>
+    <input id="new_primary_char" name="primary_char" type="text" value="{{ default_primary_char }}"
+           placeholder="strawberry / my_push / ..." list="char-list">
+    <datalist id="char-list">
+      {% for c in char_values %}
+        <option value="{{ c }}">
+      {% endfor %}
+    </datalist>
+  </div>
+
+  <div class="field">
+    <label>资产 (asset path, 相对 library_root 或绝对)</label>
+    <input name="asset_path" type="text" required value="{{ default_asset }}" size="60"
+           placeholder="例: 2026.07.18/img20260720_19253733.png">
+  </div>
+
+  <div class="field">
+    <label>其他 tags (逗号分隔, 可省略)</label>
+    <input name="tags" type="text" size="60"
+           placeholder="例: shot:pair, event:shenshan_3rd_om_cd">
+  </div>
+
+  <div class="field">
+    <label>notes</label>
+    <textarea name="notes" rows="4" cols="60"></textarea>
+  </div>
+
+  {% if error %}
+    <p class="err">{{ error }}</p>
+  {% endif %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">创建</button>
+    <a class="btn" href="/">取消</a>
+  </div>
+
 </form>
 
-<p><a href="/">← 返回</a></p>
+<script>
+(function () {
+  const idInput = document.querySelector('input[name=pid]');
+  const shotInput = document.getElementById('new_shot_date');
+  const charInput = document.getElementById('new_primary_char');
+
+  function suggestId() {
+    const shot = shotInput.value.trim();
+    const ch = charInput.value.trim();
+    let s = (shot || 'nostamp') + '_' + (ch || 'nochar') + '_';
+    // 浏览器端 hex 随机 6 位 (简易 disambiguator)
+    const hex = Array.from({length: 3}, () => Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join('');
+    s += hex;
+    idInput.value = s;
+  }
+
+  shotInput.addEventListener('change', suggestId);
+  charInput.addEventListener('input', suggestId);
+})();
+</script>
+
 {% endblock %}

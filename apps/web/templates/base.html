@@ -6,18 +6,26 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+
 <header>
-  <h1>Polarscan</h1>
+  <a class="brand" href="/">Polarscan</a>
   <nav>
-    <a href="/">全部</a>
+    <a href="/list">浏览</a>
     <a href="/new">新建</a>
-    <form method="post" action="/reload" style="display:inline">
-      <button type="submit" class="reload-btn">从磁盘重载</button>
-    </form>
+    <a href="/pool/char">角色池</a>
+    <a href="/pool/event">事件池</a>
+    <a href="/pool/theme">主题池</a>
+    <a href="/pool/collection">系列池</a>
+    <a href="/pool/composite">复合池</a>
   </nav>
+  <form method="post" action="/reload" class="reload-form">
+    <button type="submit" class="reload-btn">从磁盘重载</button>
+  </form>
 </header>
+
 <main>
 {% block body %}{% endblock %}
 </main>
+
 </body>
 </html>

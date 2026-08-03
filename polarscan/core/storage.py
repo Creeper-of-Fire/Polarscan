@@ -43,6 +43,10 @@ def read_index(library_root: str | Path) -> dict[str, Any]:
         data["tags"] = {}
     if not isinstance(data.get("polaroids"), list):
         data["polaroids"] = []
+    # tags 内部 None / 非 dict 值清掉 (历史 bootstrap 残留)
+    for prefix in list(data["tags"].keys()):
+        if not isinstance(data["tags"][prefix], dict):
+            data["tags"][prefix] = {}
     return data
 
 

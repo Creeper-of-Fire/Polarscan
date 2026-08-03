@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}编辑 {{ prefix }}:{{ key }}{% endblock %}
+{% block body %}
+
+<h2>编辑 <code>{{ prefix }}:{{ key }}</code></h2>
+
+<p class="hint">
+  被 {{ used_by|length }} 张拍立得使用:
+  {% for p in used_by[:8] %}<a href="/bench/{{ p.id }}"><code>{{ p.id }}</code></a> {% endfor %}
+  {% if used_by|length > 8 %}...{% endif %}
+</p>
+
+<form method="post" action="/pool/{{ prefix }}/{{ key }}/edit" class="form-pool-edit">
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+
+  <div class="field">
+    <label>canonical_name (UI 显示用, 可空)</label>
+    <input name="canonical_name" type="text" value="{{ info.canonical_name or '' }}" size="40">
+  </div>
+
+  <div class="field">
+    <label>aliases (逗号分隔, 用于搜索)</label>
+    <input name="aliases" type="text" size="60" value="{{ info.aliases | join(', ') if info.aliases else '' }}">
+  </div>
+
+  <div class="field">
+    <label>notes</label>
+    <textarea name="notes" rows="4" cols="60">{{ info.notes or '' }}</textarea>
+  </div>
+
+  <details class="extras-block">
+    <summary>额外字段 (event/date/venue, composite/parts_count, theme/year, ...)</summary>
+    <p class="hint">已有的非标准字段:</p>
+    <table class="kv-table">
+      {% for k, v in info.items() %}
+        {% if k not in ('canonical_name', 'aliases', 'notes') %}
+          <tr><td><code>{{ k }}</code></td><td><code>{{ v }}</code></td></tr>
+        {% endif %}
+      {% endfor %}
+    </table>
+    <label>附加字段 (JSON, 比如 <code>{"date": "2025-10-12", "venue": "成都"}</code>)</label>
+    <textarea name="extra_json" rows="3" cols="60" placeholder='{"date": "2025-10-12", "venue": "成都"}'></textarea>
+    <small class="hint">以后会用表单字段替换这块. 现在先 JSON 凑.</small>
+  </details>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">💾 保存</button>
+    <a class="btn" href="{{ return_to }}">取消</a>
+    <span class="spacer"></span>
+    <button type="submit" formaction="/pool/{{ prefix }}/{{ key }}/delete" class="btn btn-danger"
+            onclick="return confirm('从池中删除 {{ prefix }}:{{ key }} 的元数据 (不会移除 polaroid 的 tags) ?')">从池删除元数据</button>
+  </div>
+</form>
+
+{% endblock %}
