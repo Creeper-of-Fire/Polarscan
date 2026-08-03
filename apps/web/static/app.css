@@ -1,0 +1,196 @@
+/* Polarscan - 极简可读样式 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f7f7f8;
+  color: #222;
+  margin: 0;
+  line-height: 1.5;
+}
+header {
+  background: #1f2328;
+  color: #eee;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+header nav a {
+  color: #eee;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+header nav a:hover { background: #3a3f47; }
+header .reload-btn {
+  background: #2d3340;
+  color: #eee;
+  border: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+header .reload-btn:hover { background: #3a3f47; }
+main {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 18px;
+}
+h2 { margin-top: 0.5em; font-size: 18px; }
+h2 small { color: #888; font-weight: normal; }
+
+/* grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: #fff;
+  border: 1px solid #e3e3e6;
+  border-radius: 6px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.1s;
+}
+.card:hover { border-color: #888; }
+.card .thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.card .thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.card .meta {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-top: 1px solid #eee;
+}
+.card .meta strong {
+  display: block;
+  font-size: 11px;
+  opacity: 0.6;
+  font-weight: normal;
+  word-break: break-all;
+}
+.card .meta small { color: #888; font-size: 11px; }
+.tags { margin-top: 4px; }
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  margin: 1px 1px 1px 0;
+  background: #e8e8eb;
+  border-radius: 3px;
+  color: #444;
+}
+.tag-char { background: #ffe4ec; color: #c41e5b; }
+.tag-event { background: #d6e6ff; color: #1d4fbb; }
+.tag-theme { background: #e6dcff; color: #5a32a3; }
+.tag-collection { background: #fff0c4; color: #826200; }
+.tag-composite { background: #d9f4dd; color: #1e7a3e; }
+.tag-moment { background: #ececec; color: #555; }
+
+/* detail page */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.left img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid #ddd;
+}
+.left .caption { font-size: 12px; color: #888; }
+
+.right fieldset {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  background: #fff;
+}
+.right legend {
+  font-size: 12px;
+  color: #555;
+  padding: 0 6px;
+}
+.right input[type=text],
+.right textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+.right textarea { resize: vertical; min-height: 80px; }
+.suggest { font-size: 11px; margin-top: 6px; line-height: 1.8; }
+.suggest b { color: #888; margin-right: 4px; }
+.suggest-tag {
+  background: #f5f5f5;
+  padding: 1px 4px;
+  margin: 1px;
+  cursor: pointer;
+  border-radius: 2px;
+  font-size: 10px;
+}
+.suggest-tag:hover { background: #e0e0e0; }
+
+.asset-list { margin: 4px 0; padding-left: 18px; font-size: 12px; }
+.asset-list code { background: #f3f3f3; padding: 1px 4px; border-radius: 2px; }
+.asset-list .empty { color: #888; }
+
+.actions { display: flex; gap: 10px; margin-top: 14px; }
+button {
+  padding: 8px 16px;
+  background: #1f2328;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+button:hover { background: #3a3f47; }
+button.danger { background: #a32a2a; }
+button.danger:hover { background: #c13838; }
+button.cancel { background: #888; }
+button.cancel:hover { background: #666; }
+
+.err { color: #c0392b; font-weight: bold; }
+
+code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+
+/* form new */
+.form-new fieldset {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  background: #fff;
+}
+.form-new legend { font-size: 12px; color: #555; padding: 0 6px; }
+.form-new input[type=text],
+.form-new textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Polarscan{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <h1>Polarscan</h1>
+  <nav>
+    <a href="/">全部</a>
+    <a href="/new">新建</a>
+    <form method="post" action="/reload" style="display:inline">
+      <button type="submit" class="reload-btn">从磁盘重载</button>
+    </form>
+  </nav>
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

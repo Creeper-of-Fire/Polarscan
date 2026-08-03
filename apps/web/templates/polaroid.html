@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Polarscan - {{ p.id }}{% endblock %}
+{% block body %}
+<div class="layout">
+  <div class="left">
+    <img src="/img/{{ p.id }}" alt="{{ p.id }}">
+    <p class="caption"><a href="/thumb/{{ p.id }}">缩略图源</a> · <code>{{ p.id }}</code></p>
+  </div>
+
+  <form method="post" class="right">
+    <h2>{{ p.id }}</h2>
+
+    <fieldset>
+      <legend>tags（逗号分隔；前缀驱动语义）</legend>
+      <input name="tags" type="text" value="{{ p.tags | join(', ') }}" size="60">
+      <div class="suggest">
+        {% if char_tags %}
+          <div><b>char:</b>
+            {% for t in char_tags %}<code class="suggest-tag" data-tag="char:{{ t }}">char:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+        {% if event_tags %}
+          <div><b>event:</b>
+            {% for t in event_tags %}<code class="suggest-tag" data-tag="event:{{ t }}">event:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+        {% if theme_tags %}
+          <div><b>theme:</b>
+            {% for t in theme_tags %}<code class="suggest-tag" data-tag="theme:{{ t }}">theme:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+        {% if collection_tags %}
+          <div><b>collection:</b>
+            {% for t in collection_tags %}<code class="suggest-tag" data-tag="collection:{{ t }}">collection:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+        {% if composite_tags %}
+          <div><b>composite:</b>
+            {% for t in composite_tags %}<code class="suggest-tag" data-tag="composite:{{ t }}">composite:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+        {% if moment_tags %}
+          <div><b>moment:</b>
+            {% for t in moment_tags %}<code class="suggest-tag" data-tag="moment:{{ t }}">moment:{{ t }}</code>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>shot_date (YYYY-MM-DD)</legend>
+      <input name="shot_date" type="text" value="{{ p.shot_date or '' }}" placeholder="2026-01-01">
+    </fieldset>
+
+    <fieldset>
+      <legend>notes</legend>
+      <textarea name="notes" rows="6" cols="60">{{ p.notes }}</textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>资产 (只读, 改用编辑工具直接改 yaml)</legend>
+      <ul class="asset-list">
+      {% for a in p.assets %}
+        <li>
+          <code>{{ a.role }}</code> →
+          <code>{{ a.path }}</code>
+          {% if a.captured_at or a.device %}
+            <small>({{ a.captured_at or '?' }}, {{ a.device or '?' }})</small>
+          {% endif %}
+        </li>
+      {% else %}
+        <li class="empty">(无资产记录, 原图不会被前端渲染)</li>
+      {% endfor %}
+      </ul>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit">保存</button>
+      <button type="submit" formaction="/polaroid/{{ p.id }}/delete" formnovalidate
+              class="danger"
+              onclick="return confirm('删除 {{ p.id }}?')">删除</button>
+    </div>
+  </form>
+</div>
+
+<p><a href="/">← 返回列表</a></p>
+
+<script>
+// 简易: 把建议 tag 点一下塞进输入框
+document.querySelectorAll('.suggest-tag').forEach(el => {
+  el.addEventListener('click', () => {
+    const input = document.querySelector('input[name=tags]');
+    const cur = input.value.split(',').map(s => s.trim()).filter(Boolean);
+    const tag = el.dataset.tag;
+    if (!cur.includes(tag)) {
+      cur.push(tag);
+      input.value = cur.join(', ');
+    }
+    input.focus();
+  });
+});
+</script>
+{% endblock %}

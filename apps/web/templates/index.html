@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Polarscan - 浏览{% endblock %}
+{% block body %}
+<h2>
+  浏览 ({{ polaroids|length }} / {{ all_count }})
+  {% if tag_filter %}<small>· 标签: <code>{{ tag_filter }}</code></small>{% endif %}
+</h2>
+
+{% if not polaroids %}
+  <p>还没有录入任何拍立得。<a href="/new">新建一份</a></p>
+{% else %}
+<div class="grid">
+{% for p in polaroids %}
+  <a class="card" href="/polaroid/{{ p.id }}">
+    <div class="thumb"><img src="/thumb/{{ p.id }}" alt="{{ p.id }}" loading="lazy"></div>
+    <div class="meta">
+      <strong>{{ p.id }}</strong>
+      <small>{{ p.shot_date or '—' }}</small>
+      <div class="tags">
+      {% for t in p.tags %}
+        <span class="tag tag-{{ t.split(':')[0] if ':' in t else 'plain' }}">{{ t }}</span>
+      {% endfor %}
+      </div>
+    </div>
+  </a>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
