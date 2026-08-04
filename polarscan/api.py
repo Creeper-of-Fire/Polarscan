@@ -297,53 +297,7 @@ class Polarscan:
             target = f"{prefix}:{value}"
             return [p for p in list_polaroids(self._data) if target in p.tags]  # noqa: E501
 
-    # ---- drop 工作流: 创建/追加/编辑 ----
-
-    def import_from_files(
-        self,
-        paths: list[str],
-        roles: list[str] | None,
-        date: str | None,
-        char: str | None,
-        tags: list[str],
-        notes: str,
-        pid: str,
-    ) -> Polaroid:
-        """从 F:盘路径集合创建新 polaroid (drop 工作流的核心入口)。
-
-        每个 path 都会被读取 + 计算 hash + 生成缩略图, 然后挂到新 polaroid 上。
-        roles 不传则按 front/back/additional 默认; 长度与 paths 必须一致。
-
-        pid 必须在 yaml 中不存在, 否则抛 ValueError (由调用方映射到 409)。
-        tags / notes 直接写入。
-        """
-        if not paths:
-            raise ValueError("paths 不能为空")
-        if roles is not None and len(roles) != len(paths):
-            raise ValueError("roles 数量必须与 paths 一致")
-
-        with self._lock:
-            if any(p.get("id") == pid for p in self._data.get("polaroids", [])):
-                raise ValueError(f"id '{pid}' 已存在")
-
-            assets: list[Asset] = []
-            for i, raw_path in enumerate(paths):
-                role = roles[i] if roles is not None else _default_role_for_index(i)
-                asset = Asset.from_path(raw_path, role=role)
-                # 立刻生成缩略图, 让工作台首屏就能直接显示
-                asset.ensure_thumb(self.data_dir)
-                assets.append(asset)
-
-            polaroid = Polaroid(
-                id=pid,
-                shot_date=(date.strip() or None) if date else None,
-                tags=list(tags),
-                notes=notes,
-                assets=assets,
-            )
-            self.upsert_polaroid(polaroid)
-            self.save()
-            return polaroid
+    # ---- drop 工作流: 追加 / 编辑 (/new 走 form 提交, 不走 API) ----
 
     def append_files(
         self,

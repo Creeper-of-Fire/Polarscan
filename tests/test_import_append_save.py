@@ -1,4 +1,4 @@
-"""import-from-files / append-files / save-assets 端点的隔离测试."""
+"""append-files / save-assets 端点的隔离测试."""
 from __future__ import annotations
 
 import asyncio
@@ -117,103 +117,6 @@ class ImportTestBase(unittest.TestCase):
 # ============================================================
 # POST /api/polaroids/import-from-files
 # ============================================================
-class ImportFromFilesTest(ImportTestBase):
-    """drop 创建 polaroid 的核心端点."""
-
-    def test_creates_polaroid_with_multiple_assets(self) -> None:
-        """多文件 → 多 assets + 缩略图生成 + yaml 写入."""
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "2026-08-04_test_aaaaaa",
-            "path": [str(self.img_a), str(self.img_b)],
-            "role": ["front", "back"],
-            "date": "2026-08-04",
-            "char": "test",
-            "tags": ["event:demo"],
-            "notes": "imported via drop",
-        })
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body["pid"], "2026-08-04_test_aaaaaa")
-
-        # 验证 yaml 写入
-        server.ps.reload()
-        p = server.ps.polaroid("2026-08-04_test_aaaaaa")
-        self.assertIsNotNone(p)
-        assert p is not None
-        self.assertEqual(p.shot_date, "2026-08-04")
-        self.assertEqual(p.tags, ["event:demo"])
-        self.assertEqual(p.notes, "imported via drop")
-        self.assertEqual(len(p.assets), 2)
-        self.assertEqual(p.assets[0].role, "front")
-        self.assertEqual(p.assets[1].role, "back")
-        # 每个 asset 都应有 hash 和 thumb
-        for a in p.assets:
-            self.assertIsNotNone(a.hash)
-            self.assertTrue(
-                a.thumb_path(server.ps.data_dir).exists()
-            )
-
-    def test_default_roles_when_omitted(self) -> None:
-        """不传 role 时按 front/back/additional 默认."""
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "default_roles",
-            "path": [str(self.img_a), str(self.img_b), str(self.img_c)],
-            "date": None,
-            "char": None,
-            "tags": [],
-            "notes": "",
-        })
-        self.assertEqual(r.status_code, 200)
-        p = server.ps.polaroid("default_roles")
-        assert p is not None
-        self.assertEqual(
-            [a.role for a in p.assets],
-            ["front", "back", "additional"],
-        )
-
-    def test_pid_collision_409(self) -> None:
-        """pid 已存在 → 409."""
-        server.ps.upsert_polaroid(Polaroid(id="existing_id"))
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "existing_id",
-            "path": [str(self.img_a)],
-            "tags": [],
-            "notes": "",
-        })
-        self.assertEqual(r.status_code, 409)
-
-    def test_missing_path_400(self) -> None:
-        """path 为空 → 400."""
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "no_paths",
-            "path": [],
-            "tags": [],
-            "notes": "",
-        })
-        self.assertEqual(r.status_code, 400)
-
-    def test_role_count_mismatch_400(self) -> None:
-        """role 数量与 path 不一致 → 400."""
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "mismatch",
-            "path": [str(self.img_a), str(self.img_b)],
-            "role": ["front"],  # 只有 1 个 role, 但 2 个 path
-            "tags": [],
-            "notes": "",
-        })
-        self.assertEqual(r.status_code, 400)
-
-    def test_missing_file_409(self) -> None:
-        """路径不存在 → 409 (读取失败)."""
-        r = _post("/api/polaroids/import-from-files", {
-            "pid": "missing",
-            "path": [str(self.img_dir / "no_such_file.png")],
-            "tags": [],
-            "notes": "",
-        })
-        self.assertEqual(r.status_code, 409)
-
-
 # ============================================================
 # POST /api/polaroids/{pid}/append-files
 # ============================================================

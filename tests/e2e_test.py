@@ -147,7 +147,7 @@ class WebEndToEndTest(unittest.TestCase):
             "/new",
             {
                 "pid": "created_001",
-                "asset_path": str(self.image_path),
+                "asset_paths": str(self.image_path),
                 "tags": "char:hime, shot:pair",
                 "shot_date": "2026-08-04",
                 "notes": "网页端创建",

@@ -26,6 +26,7 @@ console.log('parseFolderDateRange:');
 check('点分隔单日',     P.parseFolderDateRange('2026.07.25'), { start: '2026-07-25', end: '2026-07-25' });
 check('横线分隔单日',    P.parseFolderDateRange('2026-07-25'), { start: '2026-07-25', end: '2026-07-25' });
 check('点分隔同月范围',  P.parseFolderDateRange('2026.07.25-26'), { start: '2026-07-25', end: '2026-07-26' });
+check('点分隔同月范围 v2',  P.parseFolderDateRange('2026.08.01-02'), { start: '2026-08-01', end: '2026-08-02' });
 check('点分隔跨日范围',  P.parseFolderDateRange('2026.07.25-2026.07.27'), null);  // 不解析跨月
 check('不匹配',         P.parseFolderDateRange('已喂狗'), null);
 check('不匹配',         P.parseFolderDateRange('random_folder'), null);

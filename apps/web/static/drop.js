@@ -16,12 +16,20 @@
   // 工具函数
   // ============================================================
 
-  // 用 blake2b(64-byte digest, 与 server `compute_hash` 完全一致) 算 hash
-  // hash-wasm 暴露 hashwasm.blake2b(data, bits) - bits 是摘要位数, 64 bytes = 512 bits.
-  // 异步返回 hex string.
-  async function computeFileHash(file) {
+  // 读一次 arrayBuffer, 同时算 hash + 生成 data URL (缩略图)
+  // 避免 FileReader + arrayBuffer 读两次文件
+  async function readFileData(file) {
     const buf = await file.arrayBuffer();
-    return hashwasm.blake2b(new Uint8Array(buf), 512);
+    const bytes = new Uint8Array(buf);
+    const hash = await hashwasm.blake2b(bytes, 512);
+    // base64 encode for thumbnail data URL
+    let binary = '';
+    const chunk = 0x8000;  // avoid call stack overflow on large files
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    const dataUrl = 'data:image/png;base64,' + btoa(binary);
+    return { hash, dataUrl };
   }
 
   // File.lastModified 是 epoch 毫秒, server Triple.mtime 是整数 epoch 秒
@@ -98,6 +106,31 @@
         );
       },
 
+      // 从候选路径的父目录名推断日期段 (单一结果, 取第一个能解析的)
+      get dateSuggestion() {
+        const tryFromFiles = (candidates) => {
+          for (const cand of candidates) {
+            const dirName = window.PathParse.parentDirName(cand.path);
+            if (!dirName) continue;
+            const range = window.PathParse.parseFolderDateRange(dirName);
+            if (range) return range;
+          }
+          return null;
+        };
+        // 优先从 importable 取
+        const importablePaths = this.importable.map(i => ({ path: i.path }));
+        return tryFromFiles(importablePaths)
+          || tryFromFiles(this.files.flatMap(f => (f.identify.candidates || []).slice(0, 1)));
+      },
+
+      applyDate(date) {
+        const shotInput = document.querySelector('input[name=shot_date]');
+        if (shotInput) {
+          shotInput.value = date;
+          shotInput.dispatchEvent(new Event('input'));
+        }
+      },
+
       // ---- 操作 ----
       async handleDrop(event) {
         event.preventDefault();
@@ -111,13 +144,17 @@
         const fileList = Array.from(dt.files);
 
         try {
-          // 1) 算 hash
-          const hashed = await Promise.all(fileList.map(async (f) => ({
-            name: f.name,
-            size: f.size,
-            mtime: fileMtimeSeconds(f),
-            hash: await computeFileHash(f),
-          })));
+          // 1) 算 hash + 缩略图 (一次 IO)
+          const hashed = await Promise.all(fileList.map(async (f) => {
+            const data = await readFileData(f);
+            return {
+              name: f.name,
+              size: f.size,
+              mtime: fileMtimeSeconds(f),
+              hash: data.hash,
+              thumb: data.dataUrl,
+            };
+          }));
 
           this.status = 'identifying';
 
@@ -129,9 +166,40 @@
 
           this.files = identified;
           this.status = 'ready';
+
+          // 3) 自动填到下方表单 (asset_paths textarea + 可选 shot_date)
+          this.populateForm();
         } catch (e) {
           this.errorMsg = e.message || String(e);
           this.status = 'error';
+        }
+      },
+
+      // 把可导入的路径自动填到表单 (textarea 一行一个), 不覆盖用户已手动填的内容
+      populateForm() {
+        const paths = this.importable.map(i => i.path);
+        if (paths.length === 0) return;
+
+        const ta = document.getElementById('new_asset_paths');
+        if (ta) {
+          const existing = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+          const merged = [...new Set([...existing, ...paths])];
+          ta.value = merged.join('\n');
+        }
+
+        // 如果 shot_date 还没填且能从一个候选路径的父目录推断, 自动填第一个
+        const shotInput = document.querySelector('input[name=shot_date]');
+        if (shotInput && !shotInput.value.trim()) {
+          for (const cand of paths) {
+            const dirName = window.PathParse.parentDirName(cand);
+            if (!dirName) continue;
+            const range = window.PathParse.parseFolderDateRange(dirName);
+            if (range) {
+              shotInput.value = range.start;
+              shotInput.dispatchEvent(new Event('input'));  // 触发 suggestId 重新派生 pid
+              break;
+            }
+          }
         }
       },
 
@@ -159,61 +227,6 @@
       removeFile(i) {
         this.files.splice(i, 1);
         if (this.files.length === 0) this.status = 'idle';
-      },
-
-      async confirmImport() {
-        const items = this.importable;
-        if (items.length === 0) {
-          this.errorMsg = '没有可导入的文件';
-          return;
-        }
-        // 从表单读全部相关字段
-        const shotInput = document.querySelector('input[name=shot_date]');
-        const shotDate = shotInput ? shotInput.value.trim() : '';
-        if (!shotDate) {
-          this.errorMsg = '请先填写拍摄日期';
-          return;
-        }
-        const pidInput = document.querySelector('input[name=pid]');
-        const charInput = document.querySelector('input[name=primary_char]');
-        const tagsInput = document.querySelector('input[name=tags]');
-        const notesInput = document.querySelector('textarea[name=notes]');
-
-        const pid = pidInput ? pidInput.value.trim() : '';
-        if (!pid) {
-          this.errorMsg = '请先填写 id';
-          return;
-        }
-        const charVal = charInput ? charInput.value.trim() : '';
-        const tagsRaw = tagsInput ? tagsInput.value : '';
-        const notesRaw = notesInput ? notesInput.value : '';
-        const tagsList = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
-
-        this.status = 'submitting';
-        try {
-          const r = await fetch('/api/polaroids/import-from-files', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pid: pid,
-              path: items.map(i => i.path),
-              role: items.map(i => i.role),
-              date: shotDate,
-              char: charVal,
-              tags: tagsList,
-              notes: notesRaw,
-            }),
-          });
-          if (!r.ok) {
-            const t = await r.text();
-            throw new Error('导入失败: HTTP ' + r.status + ' - ' + t);
-          }
-          const data = await r.json();
-          window.location.href = '/bench/' + encodeURIComponent(data.pid);
-        } catch (e) {
-          this.errorMsg = e.message || String(e);
-          this.status = 'error';
-        }
       },
 
       reset() {
@@ -296,6 +309,7 @@
 
         if (paths.length === 0) {
           this.errorMsg = '没有可追加的文件';
+          this.status = 'error';
           return;
         }
 

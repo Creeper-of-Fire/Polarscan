@@ -20,41 +20,54 @@
     <template x-for="(f, i) in files" :key="f.name + f.mtime">
       <div class="dropzone-result"
            :class="'result-' + fileStatus(f)">
-        <code class="dropzone-fname" x-text="f.name"></code>
-        <span class="dropzone-status" x-text="fileStatusLabel(f)"></span>
-        <template x-if="fileStatus(f) === 'hash-hit'">
-          <span class="dropzone-detail">
-            已在 polaroid <code x-text="f.identify.by_hash[0].pid"></code>
-            第 <span x-text="f.identify.by_hash[0].asset_idx + 1"></span> 张
-          </span>
-        </template>
-        <template x-if="fileStatus(f) === 'candidate-in-yaml'">
-          <span class="dropzone-detail">
-            F:盘路径 <code x-text="firstCandidatePath(f)"></code>
-            已导入到 polaroid <code x-text="f.identify.candidates[0].in_yaml_pid"></code>
-          </span>
-        </template>
-        <template x-if="fileStatus(f) === 'new'">
-          <span class="dropzone-detail">
-            将新建, 路径 <code x-text="firstCandidatePath(f)"></code>
-          </span>
-        </template>
-        <template x-if="fileStatus(f) === 'no-match'">
-          <span class="dropzone-detail">
-            F:盘未找到匹配 (name+size+mtime), 跳过
-          </span>
-        </template>
+        <img class="dropzone-thumb" :src="f.thumb" alt="" loading="lazy">
+        <div class="dropzone-result-info">
+          <code class="dropzone-fname" x-text="f.name"></code>
+          <span class="dropzone-status" x-text="fileStatusLabel(f)"></span>
+          <template x-if="fileStatus(f) === 'hash-hit'">
+            <span class="dropzone-detail">
+              已在 polaroid <code x-text="f.identify.by_hash[0].pid"></code>
+              第 <span x-text="f.identify.by_hash[0].asset_idx + 1"></span> 张
+            </span>
+          </template>
+          <template x-if="fileStatus(f) === 'candidate-in-yaml'">
+            <span class="dropzone-detail">
+              F:盘路径 <code x-text="firstCandidatePath(f)"></code>
+              已导入到 polaroid <code x-text="f.identify.candidates[0].in_yaml_pid"></code>
+            </span>
+          </template>
+          <template x-if="fileStatus(f) === 'new'">
+            <span class="dropzone-detail">
+              将新建, 路径 <code x-text="firstCandidatePath(f)"></code>
+            </span>
+          </template>
+          <template x-if="fileStatus(f) === 'no-match'">
+            <span class="dropzone-detail">
+              F:盘未找到匹配 (name+size+mtime), 跳过
+            </span>
+          </template>
+        </div>
         <button type="button" class="dropzone-x" @click="removeFile(i)">×</button>
       </div>
     </template>
 
-    <div class="dropzone-actions" x-show="importable.length > 0">
+    <template x-if="dateSuggestion">
+      <div class="dropzone-date-suggestion">
+        <span class="hint">从路径推断的日期 (点 chip 自动填入拍摄日期):</span>
+        <button type="button" class="drc-btn" @click="applyDate(dateSuggestion.start)"
+                x-text="dateSuggestion.start"></button>
+        <template x-if="dateSuggestion.start !== dateSuggestion.end">
+          <span class="hint">~</span>
+          <button type="button" class="drc-btn" @click="applyDate(dateSuggestion.end)"
+                  x-text="dateSuggestion.end"></button>
+        </template>
+      </div>
+    </template>
+
+    <div class="dropzone-actions">
       <small class="hint">
-        可导入 <span x-text="importable.length"></span> 个 / hash 命中跳过 <span x-text="hashHits.length"></span> 个
+        已自动填入下方表单 (<span x-text="importable.length"></span> 个). hash 命中 <span x-text="hashHits.length"></span> 个已跳过.
       </small>
-      <button type="button" class="btn btn-primary" @click="confirmImport()">
-        确认导入
-      </button>
       <button type="button" class="btn" @click="reset()">清空</button>
     </div>
   </div>
@@ -88,9 +101,10 @@
   </div>
 
   <div class="field">
-    <label>资产路径（绝对路径）</label>
-    <input name="asset_path" type="text" required value="{{ default_asset }}" size="60"
-           placeholder="例: F:\相册\偶活\拍立得扫描\偶活拍立得扫描\2026.07.18\img...png">
+    <label>资产路径（每行一个绝对路径）</label>
+    <textarea id="new_asset_paths" name="asset_paths" rows="4" cols="60" required
+              placeholder="例:&#10;F:\相册\...\img1.png&#10;F:\相册\...\img2.png">{{ default_asset_paths }}</textarea>
+    <small class="hint">拖入文件到上方区域会自动填入; 也可以手动粘贴多行。</small>
   </div>
 
   <div class="field">

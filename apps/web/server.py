@@ -258,7 +258,7 @@ def new_form(
         {
             "error": None,
             "default_pid": suggested,
-            "default_asset": asset or "",
+            "default_asset_paths": asset or "",
             "default_shot_date": shot_date or "",
             "default_primary_char": primary_char or "",
             "char_values": ps.all_tags_with_prefix("char"),
@@ -270,11 +270,25 @@ def new_form(
 async def new_create(
     request: Request,
     pid: str = Form(...),
-    asset_path: str = Form(...),
+    asset_paths: str = Form(""),
     tags: str = Form(""),
     shot_date: str = Form(""),
     notes: str = Form(""),
 ):
+    paths = [s.strip() for s in asset_paths.splitlines() if s.strip()]
+    if not paths:
+        return templates.TemplateResponse(
+            request,
+            "new.html",
+            {
+                "error": "至少填一个资产路径",
+                "default_pid": pid,
+                "default_asset_paths": asset_paths,
+                "default_shot_date": shot_date,
+                "char_values": ps.all_tags_with_prefix("char"),
+            },
+            status_code=400,
+        )
     if ps.polaroid(pid):
         return templates.TemplateResponse(
             request,
@@ -282,7 +296,7 @@ async def new_create(
             {
                 "error": f"id '{pid}' 已存在，请修改后重试（也可直接编辑 YAML）",
                 "default_pid": pid,
-                "default_asset": asset_path,
+                "default_asset_paths": asset_paths,
                 "default_shot_date": shot_date,
                 "char_values": ps.all_tags_with_prefix("char"),
             },
@@ -294,8 +308,12 @@ async def new_create(
         tags=[t.strip() for t in tags.split(",") if t.strip()],
         notes=notes,
     )
-    if asset_path.strip():
-        p.assets.append(Asset(role="front", path=asset_path.strip()))
+    # 每个路径: 读 + 算 hash (Asset.from_path) + 默认 role
+    for i, raw_path in enumerate(paths):
+        role = "front" if i == 0 else ("back" if i == 1 else "additional")
+        asset = Asset.from_path(raw_path, role=role)
+        asset.ensure_thumb(ps.data_dir)
+        p.assets.append(asset)
     ps.upsert_polaroid(p)
     ps.save()
     return RedirectResponse(f"/bench/{p.id}", status_code=303)
@@ -496,73 +514,8 @@ async def api_drop_identify(request: Request):
 
 
 # ============================================================
-# drop 工作流: 创建 / 追加 / 编辑 polaroid
+# drop 工作流: 追加 / 编辑 polaroid (/new 用 form 直接提交, 不走 API)
 # ============================================================
-@app.post("/api/polaroids/import-from-files")
-async def api_import_from_files(request: Request):
-    """drop 工作流的确认导入入口: 从 F:盘路径集合创建新 polaroid。
-
-    请求体 (JSON):
-      {
-        pid: str,
-        path: [str, ...],         # F:盘绝对路径
-        role: [str, ...] | null,   # 可选, 与 path 等长; 默认 front/back/additional
-        date: str | null,          # shot_date
-        char: str | null,          # 用于派生 id (与 date 一起)
-        tags: [str, ...],          # 直接写入
-        notes: str                 # 直接写入
-      }
-
-    返回: {pid: "..."}
-    错误:
-      - 400: 请求体非法 / 字段缺失
-      - 409: pid 已存在 / 读取文件失败
-    """
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        raise HTTPException(400, "请求体必须是合法 JSON")
-
-    pid = body.get("pid")
-    paths = body.get("path") or []
-    roles = body.get("role")
-    date = body.get("date")
-    char = body.get("char")
-    tags = body.get("tags") or []
-    notes = body.get("notes") or ""
-
-    if not isinstance(pid, str) or not pid:
-        raise HTTPException(400, "缺少 pid（字符串）")
-    if not isinstance(paths, list) or not paths:
-        raise HTTPException(400, "缺少 path（非空列表）")
-    if roles is not None and not isinstance(roles, list):
-        raise HTTPException(400, "role 必须是列表或 null")
-    if not isinstance(tags, list):
-        raise HTTPException(400, "tags 必须是列表")
-
-    try:
-        polaroid = ps.import_from_files(
-            paths=paths,
-            roles=roles,
-            date=date,
-            char=char,
-            tags=tags,
-            notes=notes,
-            pid=pid,
-        )
-    except ValueError as e:
-        # pid 冲突或 paths/roles 数量不符
-        msg = str(e)
-        if "已存在" in msg:
-            raise HTTPException(409, msg)
-        raise HTTPException(400, msg)
-    except OSError as e:
-        # 读取 F:盘文件失败
-        raise HTTPException(409, f"读取文件失败: {e}")
-
-    return {"pid": polaroid.id}
-
-
 @app.post("/api/polaroids/{pid}/append-files")
 async def api_append_files(pid: str, request: Request):
     """把 F:盘路径集合追加到现有 polaroid。
