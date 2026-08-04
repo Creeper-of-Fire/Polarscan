@@ -264,14 +264,14 @@ async def pool_edit_save(
     extra_json: str = Form(""),
     return_to: Optional[str] = Form(None),
 ):
-    info: dict = {}
-    if canonical_name.strip():
-        info["canonical_name"] = canonical_name.strip()
-    if aliases.strip():
-        info["aliases"] = [a.strip() for a in aliases.split(",") if a.strip()]
-    if notes.strip():
-        info["notes"] = notes
-    # extra 字段 (date / venue / year / label / parts_count / 等) — 解析 JSON
+    # 表单全量提交 → 主字段全量覆盖语义: 空字符串/空列表 = 清空, 不再做 trim 判空跳过
+    # 用旧 info 做 base, 保证只改一个字段时其他字段不消失
+    info: dict = dict(ps.tag_info(prefix, key))
+    info["canonical_name"] = canonical_name.strip()
+    info["aliases"] = [a.strip() for a in aliases.split(",") if a.strip()]
+    info["notes"] = notes.strip()
+    # extra 字段 (date / venue / year / label / parts_count / 等) — JSON merge 语义
+    # (跟主字段的"赋值"语义不同, 保留: 用户传 JSON 才动, 否则保留原 extras)
     if extra_json.strip():
         import json
         try:
