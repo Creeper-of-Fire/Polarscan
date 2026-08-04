@@ -29,6 +29,41 @@
   <div class="bench-date-seg" id="bench-date-seg"></div>
 </div>
 
+{# 追加资产 dropzone #}
+<section class="dropzone-block bench-dropzone"
+         x-data='appendToPid("{{ p.id }}")'>
+
+  <div class="dropzone-target"
+       @dragover.prevent="$el.classList.add('dragover')"
+       @dragleave="$el.classList.remove('dragover')"
+       @drop.prevent="handleDrop($event); $el.classList.remove('dragover')">
+    <span x-show="status === 'idle'">拖入文件追加到这张拍立得 (role 由现有资产数派生)</span>
+    <span x-show="status === 'hashing'">算 hash 中…</span>
+    <span x-show="status === 'identifying'">identify 中…</span>
+    <span x-show="status === 'submitting'">提交中…</span>
+    <span x-show="status === 'error'" x-text="errorMsg"></span>
+  </div>
+
+  <div class="dropzone-results" x-show="status === 'ready' || status === 'error'">
+    <template x-for="(f, i) in files" :key="f.name + f.mtime">
+      <div class="dropzone-result"
+           :class="'result-' + fileStatus(f)">
+        <code class="dropzone-fname" x-text="f.name"></code>
+        <span class="dropzone-status" x-text="fileStatusLabel(f)"></span>
+        <button type="button" class="dropzone-x" @click="files.splice(i, 1)">×</button>
+      </div>
+    </template>
+
+    <div class="dropzone-actions"
+         x-show="files.some(f => f.identify.by_hash.length === 0)">
+      <button type="button" class="btn btn-primary" @click="confirmAppend()">
+        确认追加
+      </button>
+      <button type="button" class="btn" @click="reset()">清空</button>
+    </div>
+  </div>
+</section>
+
 <div class="bench-layout">
 
   {# 左侧：大图与资产
@@ -180,11 +215,54 @@
 
     <div class="bench-actions">
       <span class="spacer"></span>
+      <button type="button" class="btn" @click="$dispatch('open-assets-modal')">编辑资产</button>
       <button type="button" id="deleteBtn" class="btn btn-danger"
               onclick="return confirm('删除 {{ p.id }}?')">删除这张</button>
     </div>
   </div>
 </div>
+
+{# 编辑资产 modal: role / captured_at / device. 不能增删 path. #}
+<section class="assets-modal-block"
+         x-data='assetsModal("{{ p.id }}", {{ assets_json|safe }})'
+         @open-assets-modal.window="openModal()">
+
+  <div class="modal-backdrop" x-show="open" x-cloak
+       @keydown.escape.window="closeModal()"
+       @click.self="closeModal()">
+    <div class="modal-content" @click.stop>
+      <h3>编辑资产</h3>
+      <p class="hint">修改 role / captured_at / device. 不能增删 path — 增删走 dropzone / 追加.</p>
+
+      <div class="asset-edit-list">
+        <template x-for="(a, i) in assets" :key="i">
+          <div class="asset-edit-row">
+            <div class="asset-edit-fields">
+              <input type="text" x-model="a.role" placeholder="role" class="ae-role">
+              <input type="text" x-model="a.path" placeholder="path" readonly class="ae-path">
+              <input type="text" x-model="a.captured_at" placeholder="captured_at (ISO)" class="ae-cap">
+              <input type="text" x-model="a.device" placeholder="device" class="ae-dev">
+            </div>
+            <div class="asset-edit-actions">
+              <button type="button" class="ae-arrow" @click="moveUp(i)" :disabled="i === 0" title="上移">↑</button>
+              <button type="button" class="ae-arrow" @click="moveDown(i)" :disabled="i === assets.length - 1" title="下移">↓</button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <p class="err" x-show="errorMsg" x-text="errorMsg"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" @click="closeModal()">取消</button>
+        <button type="button" class="btn btn-primary" @click="save()" :disabled="saving">
+          <span x-show="!saving">保存</span>
+          <span x-show="saving">保存中…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
 
 {# 工作台脚本
    - 标签增减后立即自动保存；shot_date 与 notes 停止输入 600 毫秒后保存

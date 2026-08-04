@@ -491,3 +491,203 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .drc-btn:hover { background: #e6dcff; border-color: #b89aff; }
 .drc-btn:active { background: #d6c4ff; }
+
+/* ===== dropzone (drop 工作流) ===== */
+.dropzone-block {
+  margin-bottom: 24px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+.dropzone-target {
+  border: 2px dashed #b0b8c1;
+  border-radius: 6px;
+  padding: 24px;
+  text-align: center;
+  color: #586069;
+  background: #fafbfc;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+  font-size: 14px;
+}
+.dropzone-target.dragover {
+  border-color: #0969da;
+  background: #ddf4ff;
+  color: #0969da;
+}
+.dropzone-results {
+  margin-top: 12px;
+}
+.dropzone-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.dropzone-result.result-hash-hit {
+  background: #ffebe9;
+  border: 1px solid #ff8182;
+  color: #82071e;
+}
+.dropzone-result.result-candidate-in-yaml {
+  background: #ddf4ff;
+  border: 1px solid #54aeff;
+  color: #0969da;
+}
+.dropzone-result.result-new {
+  background: #dafbe1;
+  border: 1px solid #74e094;
+  color: #116329;
+}
+.dropzone-result.result-no-match {
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  color: #634c00;
+}
+.dropzone-fname {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  background: rgba(255,255,255,0.6);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.dropzone-status {
+  font-weight: 600;
+}
+.dropzone-detail {
+  font-size: 13px;
+  opacity: 0.85;
+}
+.dropzone-detail code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  background: rgba(255,255,255,0.6);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.dropzone-x {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 0 6px;
+}
+.dropzone-x:hover { opacity: 1; }
+.dropzone-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.dropzone-actions .hint {
+  color: #586069;
+}
+
+/* bench 页 dropzone: 紧凑横条风格, 与导航相邻 */
+.bench-dropzone {
+  margin-top: 12px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+}
+.bench-dropzone .dropzone-target {
+  padding: 14px;
+  font-size: 13px;
+}
+.bench-dropzone .dropzone-result {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* ===== assets modal ===== */
+[x-cloak] { display: none !important; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  max-width: 880px;
+  width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.modal-content h3 { margin-top: 0; font-size: 17px; }
+.modal-content .hint { color: #586069; font-size: 13px; margin: 4px 0 12px; }
+.asset-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.asset-edit-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #fafbfc;
+}
+.asset-edit-fields {
+  display: grid;
+  grid-template-columns: 100px 1fr 160px 100px;
+  gap: 6px;
+  flex: 1;
+}
+.asset-edit-fields input {
+  padding: 4px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.asset-edit-fields .ae-path {
+  background: #f0f0f0;
+  color: #555;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+.asset-edit-fields input[readonly] {
+  cursor: not-allowed;
+}
+.asset-edit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-arrow {
+  background: transparent;
+  border: 1px solid #d0d7de;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.ae-arrow:hover { background: #f0f0f0; }
+.ae-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.modal-content .err {
+  background: #ffebe9;
+  border: 1px solid #ff8182;
+  color: #82071e;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+}

@@ -7,14 +7,16 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from apps.web.library_resolver import Triple, identify_candidates
 from polarscan.api import Polarscan
 from polarscan.core.index import Asset, Polaroid
 
@@ -121,6 +123,9 @@ def _bench_ctx(p: Polaroid):
     # 后端不按 id 前缀切分日期段；shot_date 由用户手动填写，不在这里派生。
     polaroids = ps.polaroids()
     idx = ps.polaroid_index_of(p.id)
+    # assets 是 Asset dataclass 列表, Jinja tojson 不能直接序列化; 预先 dict + json.
+    # 给前端 modal 用, 编辑后整体替换.
+    assets_json = json.dumps([asdict(a) for a in p.assets])
     return {
         "p": p,
         "idx": idx,
@@ -136,6 +141,7 @@ def _bench_ctx(p: Polaroid):
         "moment_values": ps.all_tags_with_prefix("moment"),
         "shot_values": ps.all_tags_with_prefix("shot"),
         "sig_values": ps.all_tags_with_prefix("sig"),
+        "assets_json": assets_json,
     }
 
 
@@ -430,6 +436,191 @@ def _serve_asset(asset_path: str):
 def reload_endpoint():
     reload_ps()
     return RedirectResponse("/", status_code=303)
+
+
+# ============================================================
+# drop 工作流：浏览器拖入文件时的 identify 端点
+# ============================================================
+@app.post("/api/drop/identify")
+async def api_drop_identify(request: Request):
+    """drop 工作流的 identify 端点（零 F:盘读 IO）。
+
+    输入：浏览器给的 File 元数据 (name/size/lastModified) + 客户端 blake2b hash。
+    输出：
+      - by_hash: 已索引中 hash 命中的 [(pid, asset_idx), ...]
+      - candidates: F:盘 (name+size+mtime) 三元组命中的路径 + 是否已在 yaml
+
+    library_root 未配置时 candidates 为空列表。
+    hash 为空字符串时 by_hash 为空列表（hash 校验跳过，仅靠路径候选）。
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(400, "请求体必须是合法 JSON")
+
+    name = body.get("name")
+    size = body.get("size")
+    last_modified_ms = body.get("lastModified_ms")
+    h = body.get("hash") or ""
+
+    if not isinstance(name, str) or not name:
+        raise HTTPException(400, "缺少 name（字符串）")
+    if not isinstance(size, (int, float)):
+        raise HTTPException(400, "缺少 size（数字）")
+    if not isinstance(last_modified_ms, (int, float)):
+        raise HTTPException(400, "缺少 lastModified_ms（数字）")
+
+    # 1) hash 反向查
+    by_hash = [
+        {"pid": pid, "asset_idx": idx}
+        for pid, idx in ps.find_by_hash(h)
+    ]
+
+    # 2) 路径候选 + 是否已在 yaml
+    candidates: list[dict[str, Any]] = []
+    library_root = ps.library_root
+    if library_root:
+        qt = Triple(
+            name=name,
+            size=int(size),
+            mtime=round(last_modified_ms / 1000.0),
+        )
+        result = identify_candidates(library_root, [qt])
+        for cand in result.get(qt, []):
+            path_str = str(cand.path)
+            in_yaml_hits = ps.find_by_path(path_str)
+            in_yaml_pid = in_yaml_hits[0][0] if in_yaml_hits else None
+            candidates.append({"path": path_str, "in_yaml_pid": in_yaml_pid})
+
+    return {"by_hash": by_hash, "candidates": candidates}
+
+
+# ============================================================
+# drop 工作流: 创建 / 追加 / 编辑 polaroid
+# ============================================================
+@app.post("/api/polaroids/import-from-files")
+async def api_import_from_files(request: Request):
+    """drop 工作流的确认导入入口: 从 F:盘路径集合创建新 polaroid。
+
+    请求体 (JSON):
+      {
+        pid: str,
+        path: [str, ...],         # F:盘绝对路径
+        role: [str, ...] | null,   # 可选, 与 path 等长; 默认 front/back/additional
+        date: str | null,          # shot_date
+        char: str | null,          # 用于派生 id (与 date 一起)
+        tags: [str, ...],          # 直接写入
+        notes: str                 # 直接写入
+      }
+
+    返回: {pid: "..."}
+    错误:
+      - 400: 请求体非法 / 字段缺失
+      - 409: pid 已存在 / 读取文件失败
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(400, "请求体必须是合法 JSON")
+
+    pid = body.get("pid")
+    paths = body.get("path") or []
+    roles = body.get("role")
+    date = body.get("date")
+    char = body.get("char")
+    tags = body.get("tags") or []
+    notes = body.get("notes") or ""
+
+    if not isinstance(pid, str) or not pid:
+        raise HTTPException(400, "缺少 pid（字符串）")
+    if not isinstance(paths, list) or not paths:
+        raise HTTPException(400, "缺少 path（非空列表）")
+    if roles is not None and not isinstance(roles, list):
+        raise HTTPException(400, "role 必须是列表或 null")
+    if not isinstance(tags, list):
+        raise HTTPException(400, "tags 必须是列表")
+
+    try:
+        polaroid = ps.import_from_files(
+            paths=paths,
+            roles=roles,
+            date=date,
+            char=char,
+            tags=tags,
+            notes=notes,
+            pid=pid,
+        )
+    except ValueError as e:
+        # pid 冲突或 paths/roles 数量不符
+        msg = str(e)
+        if "已存在" in msg:
+            raise HTTPException(409, msg)
+        raise HTTPException(400, msg)
+    except OSError as e:
+        # 读取 F:盘文件失败
+        raise HTTPException(409, f"读取文件失败: {e}")
+
+    return {"pid": polaroid.id}
+
+
+@app.post("/api/polaroids/{pid}/append-files")
+async def api_append_files(pid: str, request: Request):
+    """把 F:盘路径集合追加到现有 polaroid。
+
+    请求体 (JSON): { path: [str, ...], role: [str, ...] | null }
+    返回: {pid: "...", asset_count: N}
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(400, "请求体必须是合法 JSON")
+
+    paths = body.get("path") or []
+    roles = body.get("role")
+
+    if not isinstance(paths, list) or not paths:
+        raise HTTPException(400, "缺少 path（非空列表）")
+    if roles is not None and not isinstance(roles, list):
+        raise HTTPException(400, "role 必须是列表或 null")
+
+    try:
+        polaroid = ps.append_files(pid, paths=paths, roles=roles)
+    except ValueError as e:
+        msg = str(e)
+        if "未找到" in msg:
+            raise HTTPException(404, msg)
+        raise HTTPException(400, msg)
+    except OSError as e:
+        raise HTTPException(409, f"读取文件失败: {e}")
+
+    return {"pid": polaroid.id, "asset_count": len(polaroid.assets)}
+
+
+@app.post("/bench/{pid}/save-assets")
+async def bench_save_assets(pid: str, request: Request):
+    """原子替换 polaroid 的 assets 列表 (modal 编辑入口)。
+
+    请求体 (JSON): { assets: [{role, path, captured_at, device}, ...] }
+    约束: assets 里的 path 集合必须 ⊆ 当前 polaroid 的 path 集合。
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(400, "请求体必须是合法 JSON")
+
+    assets = body.get("assets")
+    if not isinstance(assets, list) or not assets:
+        raise HTTPException(400, "缺少 assets（非空列表）")
+
+    try:
+        polaroid = ps.save_assets(pid, assets)
+    except ValueError as e:
+        msg = str(e)
+        if "未找到" in msg:
+            raise HTTPException(404, msg)
+        raise HTTPException(400, msg)
+
+    return {"pid": polaroid.id, "asset_count": len(polaroid.assets)}
 
 
 # ============================================================

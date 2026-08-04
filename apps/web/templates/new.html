@@ -2,6 +2,64 @@
 {% block title %}新建{% endblock %}
 {% block body %}
 
+{# 拖入区：放在顶部, 上传走 drop 流程; 下方表单手动 fallback. #}
+<section class="dropzone-block" x-data="createFromFiles()">
+
+  <div class="dropzone-target"
+       @dragover.prevent="$el.classList.add('dragover')"
+       @dragleave="$el.classList.remove('dragover')"
+       @drop.prevent="handleDrop($event); $el.classList.remove('dragover')">
+    <span x-show="status === 'idle'">拖入文件到这里创建新拍立得 (也可使用下方手动表单)</span>
+    <span x-show="status === 'hashing'">算 hash 中…</span>
+    <span x-show="status === 'identifying'">identify 中…</span>
+    <span x-show="status === 'submitting'">提交导入中…</span>
+    <span x-show="status === 'error'" x-text="errorMsg"></span>
+  </div>
+
+  <div class="dropzone-results" x-show="status === 'ready' || status === 'error'">
+    <template x-for="(f, i) in files" :key="f.name + f.mtime">
+      <div class="dropzone-result"
+           :class="'result-' + fileStatus(f)">
+        <code class="dropzone-fname" x-text="f.name"></code>
+        <span class="dropzone-status" x-text="fileStatusLabel(f)"></span>
+        <template x-if="fileStatus(f) === 'hash-hit'">
+          <span class="dropzone-detail">
+            已在 polaroid <code x-text="f.identify.by_hash[0].pid"></code>
+            第 <span x-text="f.identify.by_hash[0].asset_idx + 1"></span> 张
+          </span>
+        </template>
+        <template x-if="fileStatus(f) === 'candidate-in-yaml'">
+          <span class="dropzone-detail">
+            F:盘路径 <code x-text="firstCandidatePath(f)"></code>
+            已导入到 polaroid <code x-text="f.identify.candidates[0].in_yaml_pid"></code>
+          </span>
+        </template>
+        <template x-if="fileStatus(f) === 'new'">
+          <span class="dropzone-detail">
+            将新建, 路径 <code x-text="firstCandidatePath(f)"></code>
+          </span>
+        </template>
+        <template x-if="fileStatus(f) === 'no-match'">
+          <span class="dropzone-detail">
+            F:盘未找到匹配 (name+size+mtime), 跳过
+          </span>
+        </template>
+        <button type="button" class="dropzone-x" @click="removeFile(i)">×</button>
+      </div>
+    </template>
+
+    <div class="dropzone-actions" x-show="importable.length > 0">
+      <small class="hint">
+        可导入 <span x-text="importable.length"></span> 个 / hash 命中跳过 <span x-text="hashHits.length"></span> 个
+      </small>
+      <button type="button" class="btn btn-primary" @click="confirmImport()">
+        确认导入
+      </button>
+      <button type="button" class="btn" @click="reset()">清空</button>
+    </div>
+  </div>
+</section>
+
 <h2>新建拍立得</h2>
 
 <form method="post" class="form-new">
