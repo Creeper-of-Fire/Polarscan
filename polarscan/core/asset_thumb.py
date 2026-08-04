@@ -1,11 +1,11 @@
-"""Asset-level hash + thumb image primitives.
+"""资产级哈希与缩略图生成基础函数。
 
-底层: hash 计算 + jpg 生成. 不依赖 Asset dataclass / Polaroid.
+本模块只负责计算哈希和生成 JPEG，不依赖 Asset 数据类或 Polaroid。
 
-设计动机:
-- 命名规则 (thumb 文件名) 跟业务耦合, 放到 index.py 的 Asset 类方法.
-- 这里只做"算 hash"和"画 jpg", 不做"放哪里叫什么名字".
-- 这样测试和复用都干净.
+设计动机：
+- 缩略图命名规则与业务耦合，放在 `index.py` 的 Asset 类方法中。
+- 本模块只计算哈希和写入图像，不决定存放位置与文件名。
+- 因而更便于测试和复用。
 """
 from __future__ import annotations
 
@@ -18,21 +18,21 @@ from PIL import Image
 # ============================================================
 # 常量
 # ============================================================
-LONG_EDGE = 1024          # thumb 长边像素
-QUALITY = 85              # jpg 质量
-HASH_ALGO = "blake2b"     # 比 sha256 快, 个人库不需要 collision 抵抗
-HASH_HEX_LEN = 128        # blake2b(digest_size=64) -> 64 bytes -> 128 hex chars
-SHORT_HASH_LEN = 6        # thumb 文件名用的短哈希位数 (hex)
+LONG_EDGE = 1024          # 缩略图长边像素
+QUALITY = 85              # JPEG 质量
+HASH_ALGO = "blake2b"     # 速度快于 sha256，个人资料库无需额外抗冲突能力
+HASH_HEX_LEN = 128        # blake2b(digest_size=64)：64 字节，即 128 个十六进制字符
+SHORT_HASH_LEN = 6        # 缩略图文件名使用的十六进制短哈希长度
 THUMBS_DIRNAME = ".thumbs"
 
 
 # ============================================================
-# Hash
+# 哈希计算
 # ============================================================
 def compute_hash(src: str | Path) -> str:
-    """流式算 blake2b hash. 大文件不会爆内存.
+    """以流式方式计算 blake2b 哈希，处理大文件时不会一次占满内存。
 
-    Returns: 128 char hex string.
+    返回 128 个十六进制字符。
     """
     h = hashlib.blake2b(digest_size=64)
     with open(src, "rb") as f:
@@ -42,13 +42,13 @@ def compute_hash(src: str | Path) -> str:
 
 
 # ============================================================
-# Thumb image
+# 缩略图生成
 # ============================================================
 def make_thumb_image(src: Path, dst: Path) -> Path:
-    """生成 thumb jpg 到 dst. dst 已存在直接返回 (skip).
+    """将 JPEG 缩略图生成到 `dst`；目标已存在时直接返回。
 
-    注意: 不做 collision 检测 — 同名 dst 会被覆盖. 调用方应保证
-    dst 文件名基于 hash 派生, 实际撞的概率极低 (16M 种).
+    注意：这里不检测命名冲突，同名目标可能被覆盖。调用方应保证目标文件名
+    由哈希派生；6 位十六进制短哈希共有约 1600 万种组合。
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():

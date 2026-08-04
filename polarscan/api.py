@@ -1,7 +1,7 @@
-"""Public API. Apps must use this, not core directly.
+"""公开接口。应用层必须通过这里访问，不能直接调用 core。
 
-The single guarantee this layer enforces: every mutation is buffered in memory
-and persisted only via `save()`. Apps cannot write the YAML directly.
+本层只保证一件事：所有修改先缓存在内存中，仅在调用 `save()` 时写入磁盘。
+应用层不能直接写入 YAML。
 """
 from __future__ import annotations
 
@@ -19,33 +19,30 @@ from .core import (
     tag_value,
     write_index,
 )
-from .core.id_gen import parse_primary_char as _parse_primary_char  # noqa: F401
-
 
 class Polarscan:
-    """Single library handle. Holds an in-memory copy of _index.yaml.
+    """单个资料库的访问句柄，在内存中持有 `_index.yaml` 的副本。
 
-    Single path:
-        data_dir  — where _index.yaml + .thumbs/ live (typically SSD, code repo)
+    路径约定：
+        data_dir — 存放 `_index.yaml` 与 `.thumbs/` 的目录，通常位于 SSD。
 
-    NOTE: asset paths in _index.yaml are stored as ABSOLUTE paths (e.g.
-    `F:\\相册\\...\\img.png`), so we never need a 'library_root' at runtime.
-    Only the bootstrap (one-shot scan) script needs a library root as
-    a scan starting point.
+    注意：`_index.yaml` 中的资产路径使用绝对路径，例如
+    `F:\\相册\\...\\img.png`，因此运行时不需要 `library_root`。
+    只有执行一次性扫描的初始化脚本时，才需要提供原图根目录作为扫描起点。
     """
 
     def __init__(self, data_dir: str | Path):
         self.data_dir = Path(data_dir)
         self._data: dict[str, Any] = read_index(self.data_dir)
 
-    # ---- lifecycle ----
+    # ---- 生命周期 ----
     def reload(self) -> None:
         self._data = read_index(self.data_dir)
 
     def save(self) -> None:
         write_index(self.data_dir, self._data)
 
-    # ---- query ----
+    # ---- 查询 ----
     def polaroids(self) -> list[Polaroid]:
         return list_polaroids(self._data)
 
@@ -56,17 +53,17 @@ class Polarscan:
         return None
 
     def query_by_tag(self, tag: str) -> list[Polaroid]:
-        """Match any polaroid whose `tags` list contains `tag` exactly."""
+        """返回 `tags` 列表中精确包含指定标签的拍立得。"""
         return [p for p in self.polaroids() if tag in p.tags]
 
     def query_by_prefix(self, prefix: str) -> list[Polaroid]:
-        """All polaroids that have at least one tag with the given prefix."""
+        """返回至少包含一个指定前缀标签的拍立得。"""
         return [
             p for p in self.polaroids()
             if any(tag_prefix(t) == prefix for t in p.tags)
         ]
 
-    # ---- mutate ----
+    # ---- 修改 ----
     def upsert_polaroid(self, p: Polaroid) -> None:
         for i, existing in enumerate(self._data["polaroids"]):
             if existing.get("id") == p.id:
@@ -81,30 +78,30 @@ class Polarscan:
         ]
         return len(self._data["polaroids"]) < before
 
-    # ---- assets ----
+    # ---- 资产 ----
     def thumb_path_for(self, p: Polaroid, asset_idx: int = 0) -> Optional[Path]:
-        """Ensure thumb exists for p.assets[asset_idx], return path or None.
+        """确保 `p.assets[asset_idx]` 的缩略图存在，并返回路径；失败时返回 None。
 
-        asset_idx 显式指定: 0..len(p.assets)-1. 越界或 p.assets 空 → None.
+        `asset_idx` 必须显式位于 0 到 `len(p.assets) - 1`；越界或资产列表为空时返回 None。
 
-        设计:
-        - Thumb 文件名 = `{stem}_{asset.hash[:6]}.jpg`, 完全基于 asset.hash 字段派生.
-        - 浏览零 F 盘: thumb 已存在 → 直接返回 (纯 SSD stat).
-        - Thumb 缺失 → lazy 调用 Asset.ensure_thumb (一次性访问 F 盘).
-        - Hash 缺失 (老资产未迁移) → 返回 None, UI 提示用户跑迁移脚本.
+        设计：
+        - 缩略图文件名为 `{stem}_{asset.hash[:6]}.jpg`，完全由 `asset.hash` 派生。
+        - 浏览时不访问 F 盘：缩略图已存在则直接返回，只检查 SSD 文件状态。
+        - 缩略图缺失时按需调用 `Asset.ensure_thumb`，只访问一次 F 盘。
+        - 哈希缺失表示旧资产尚未迁移，此时返回 None，由界面提示运行迁移脚本。
         """
         if not p.assets or asset_idx < 0 or asset_idx >= len(p.assets):
             return None
         asset = p.assets[asset_idx]
         tp = asset.thumb_path(self.data_dir)
         if tp is None:
-            return None  # hash 缺失: 资产未迁移
+            return None  # 哈希缺失：资产尚未迁移
         if tp.exists():
-            return tp   # 浏览零 F 盘
-        # thumb 缺失: lazy 生成 (一次性 F 盘访问)
+            return tp   # 浏览时不访问 F 盘
+        # 缩略图缺失：按需生成，只访问一次 F 盘
         return asset.ensure_thumb(self.data_dir)
 
-    # ---- tag registry (metadata enrichment, lazy) ----
+    # ---- 标签注册表（按需补充元数据） ----
     def tag_metadata(self, prefix: str) -> dict[str, Any]:
         return self._data.get("tags", {}).get(prefix, {}) or {}
 
@@ -120,11 +117,10 @@ class Polarscan:
         self._data.setdefault("tags", {})[prefix] = registry
 
     def all_tags_with_prefix(self, prefix: str) -> list[str]:
-        """Return all tags (id form, no value resolution) used by any polaroid,
-        filtered by prefix. Useful for autocomplete in UI.
+        """返回所有拍立得已使用且前缀匹配的标签值，不解析元数据。
 
-        按使用频率降序, 同频次按 key 字母序升序. 让 bench quick-add 按钮
-        和 autocomplete 候选里最常用的排最前.
+        结果用于界面自动补全：先按使用频率降序排列，同频次再按键名字母序升序，
+        让工作台的快捷添加按钮与候选列表优先显示常用项。
         """
         counts: dict[str, int] = {}
         for p in self.polaroids():
@@ -134,19 +130,19 @@ class Polarscan:
                     counts[v] = counts.get(v, 0) + 1
         return sorted(counts.keys(), key=lambda k: (-counts[k], k))
 
-    # ---- id 派生 (GUI 工作台用) ----
+    # ---- id 派生（工作台使用） ----
     def suggest_id(self, shot_date: str | None, tags: list[str]) -> str:
-        """派生 id (不查重, 不写入). GUI 工作台表单预览使用."""
+        """派生 id，不查重也不写入，仅供工作台表单预览。"""
         primary = parse_primary_char(tags)
         return make_polaroid_id(shot_date, primary)
 
-    # ---- 浏览 / 工作台 ----
+    # ---- 浏览与工作台 ----
     def first_polaroid(self) -> Polaroid | None:
         polaroids = self.polaroids()
         return polaroids[0] if polaroids else None
 
     def polaroid_index_of(self, pid: str) -> int:
-        """-1 if not found, else 0-based index."""
+        """未找到时返回 -1，否则返回从 0 开始的索引。"""
         for i, p in enumerate(self.polaroids()):
             if p.id == pid:
                 return i
@@ -173,7 +169,7 @@ class Polarscan:
         return polaroids[idx - 1]
 
     def next_untagged(self, current_pid: str | None) -> Polaroid | None:
-        """下一张没打过 tag 的 polaroid. 跳过已打标的."""
+        """返回下一张没有标签的拍立得，并跳过已经打标的记录。"""
         polaroids = self.polaroids()
         for i, p in enumerate(polaroids):
             if current_pid is not None and p.id == current_pid:
@@ -186,15 +182,15 @@ class Polarscan:
                 return p
         return None
 
-    # ---- 池 (tag metadata) CRUD ----
+    # ---- 标签池元数据的增删改查 ----
     def tag_info(self, prefix: str, key: str) -> dict[str, Any]:
         return self.tag_metadata(prefix).get(key, {}) or {}
 
     def set_tag_info(self, prefix: str, key: str, info: dict[str, Any]) -> None:
-        """写入 tag 元数据. 空 dict 删除该 key."""
+        """写入标签元数据；传入空字典时删除该键。"""
         if not info:
             self._data.setdefault("tags", {}).setdefault(prefix, {}).pop(key, None)
-            # 清空再空 dict 的 prefix 也是允许的
+            # 清空后保留空的前缀字典也是允许的
             return
         self.upsert_tag(prefix, key, info)
 
@@ -205,7 +201,7 @@ class Polarscan:
             bucket.pop(key, None)
 
     def all_tags_in_pool(self, prefix: str) -> dict[str, dict[str, Any]]:
-        """列出某 prefix 下所有已注册的 tag + 它们的元数据."""
+        """列出指定前缀下所有已注册标签及其元数据。"""
         return dict(self.tag_metadata(prefix))
 
     def polaroids_with_tag(self, prefix: str, value: str) -> list[Polaroid]:

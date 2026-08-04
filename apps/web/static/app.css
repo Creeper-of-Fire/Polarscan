@@ -1,4 +1,4 @@
-/* Polarscan - GUI 工作台样式. 极简, 白底黑字. */
+/* Polarscan 图形工作台样式：简洁的白底黑字界面。 */
 * { box-sizing: border-box; }
 
 body {
@@ -10,7 +10,7 @@ body {
   line-height: 1.5;
 }
 
-/* ===== Header / nav ===== */
+/* ===== 页头与导航 ===== */
 header {
   background: #1f2328;
   color: #eee;
@@ -52,7 +52,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .hint { color: #777; font-size: 12px; }
 .err { color: #c0392b; font-weight: bold; }
 
-/* ===== Buttons ===== */
+/* ===== 按钮 ===== */
 .btn {
   display: inline-block;
   padding: 6px 12px;
@@ -73,7 +73,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .btn-disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-mini { padding: 3px 8px; font-size: 12px; }
 
-/* ===== Bench 工作台 ===== */
+/* ===== 工作台 ===== */
 .bench-top {
   background: #fff;
   border: 1px solid #e0e0e3;
@@ -176,7 +176,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .field input:focus,
 .field textarea:focus { border-color: #1f2328; outline: 0; }
 
-/* ===== Chips ===== */
+/* ===== 标签块 ===== */
 .chip-stream {
   display: flex;
   flex-wrap: wrap;
@@ -281,7 +281,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .spacer { flex: 1; }
 
-/* ===== List / cards ===== */
+/* ===== 列表与卡片 ===== */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -331,7 +331,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .tag-sig { background: #eae0d2; color: #6b4f1d; }
 .tag-more { color: #888; font-size: 10px; padding: 1px 4px; }
 
-/* ===== Forms (new + pool edit) ===== */
+/* ===== 表单（新建与标签池编辑） ===== */
 .form-new, .form-pool-edit {
   background: #fff;
   border: 1px solid #e0e0e3;
@@ -352,7 +352,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .form-new textarea { padding: 6px 8px; border: 1px solid #d0d0d4; border-radius: 4px; }
 
-/* ===== Pool table ===== */
+/* ===== 标签池表格 ===== */
 .pool-table {
   border-collapse: collapse;
   width: 100%;
@@ -385,7 +385,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .extras-block { border-top: 1px dashed #e0e0e3; padding-top: 8px; }
 .extras-block summary { cursor: pointer; color: #555; }
 
-/* ===== Bench 工作台 - 角色/其他 tag 独立面板 ===== */
+/* ===== 工作台中的角色与其他标签面板 ===== */
 .bench-right fieldset {
   border: 1px solid #e0e0e3;
   border-radius: 5px;
@@ -404,7 +404,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .char-panel legend { color: #c41e5b; }
 .other-tags-panel legend { color: #1d4fbb; }
 
-/* ===== Bench 顶部: 保存状态指示 ===== */
+/* ===== 工作台顶部的保存状态 ===== */
 .save-state {
   display: inline-block;
   font-size: 12px;
@@ -419,7 +419,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .save-state--dirty  { background: #fef0e7; color: #b85a00; }
 .save-state--error  { background: #fde2e2; color: #c0392b; }
 
-/* ===== Bench 顶部: 日期段快跳 widget ===== */
+/* ===== 工作台顶部的日期段跳转组件 ===== */
 .bench-date-seg {
   display: flex;
   flex-wrap: wrap;
@@ -453,7 +453,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .ds-link:hover { background: #f0f0f3; border-color: #888; }
 
-/* ===== Shot-date / notes 输入 ===== */
+/* ===== 拍摄日期与备注输入 ===== */
 #shotDateInput, #notesInput {
   width: 100%;
   padding: 6px 8px;
@@ -466,7 +466,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 #shotDateInput:focus, #notesInput:focus { border-color: #1f2328; outline: 0; }
 #notesInput { resize: vertical; min-height: 90px; }
 
-/* shot_date 候选日期按钮 (从 id 范围解析) */
+/* 从 id 日期范围解析出的 shot_date 候选按钮 */
 .date-range-candidates {
   display: flex;
   flex-wrap: wrap;

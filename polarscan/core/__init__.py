@@ -1,4 +1,4 @@
-"""Core engine. Apps 必须通过 api.Polarscan 访问, 不直接调 core。"""
+"""核心引擎。应用层必须通过 api.Polarscan 访问，不能直接调用 core。"""
 
 from .index import Polaroid, Asset, tag_prefix, tag_value
 from .storage import (

@@ -1,4 +1,4 @@
-"""Data model: Polaroid (with assets) and tag helpers."""
+"""数据模型：包含资产的 Polaroid，以及标签辅助函数。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
@@ -15,24 +15,22 @@ from .asset_thumb import (
 
 @dataclass
 class Asset:
-    """A single scanned file belonging to a polaroid.
+    """属于某张拍立得的单个扫描文件。
 
-    `role` is a free-form tag (e.g. front / back / back_signature / front_v2).
-    Same role can have multiple assets -- only `supersedes` decides which is current.
+    `role` 是自由格式标记，例如 `front`、`back`、`back_signature` 或 `front_v2`。
+    同一角色可以有多个资产，只有 `supersedes` 用于判断当前版本。
 
-    `hash` is blake2b hex 128 char. Written once at asset creation time, never
-    recomputed on browse. Enables:
-    - Path-derivable thumb filename (`{stem}_{hash[:6]}.jpg`) — zero F-disk
-      lookup on browse.
-    - Future offline path-repair tool: relocate assets in LIBRARY_ROOT, then
-      re-match by hash and rewrite paths in yaml.
+    `hash` 是 128 位十六进制 blake2b 值，在创建资产时写入一次，浏览时不再计算。
+    它支持两项能力：
+    - 直接由路径与哈希派生缩略图文件名 `{stem}_{hash[:6]}.jpg`，浏览时无需访问 F 盘。
+    - 未来的离线路径修复工具可在原图根目录中重定位资产，再按哈希匹配并重写 YAML 路径。
     """
 
     role: str
     path: str
-    captured_at: Optional[str] = None  # ISO datetime string
+    captured_at: Optional[str] = None  # ISO 格式的日期时间字符串
     device: Optional[str] = None
-    hash: Optional[str] = None  # blake2b hex (128 char), null until first written
+    hash: Optional[str] = None  # 128 位十六进制 blake2b；首次写入前为空
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Asset":
@@ -45,15 +43,15 @@ class Asset:
         )
 
     # ------------------------------------------------------------------
-    # 工厂: 算 hash + 创建 asset 实例
+    # 工厂：计算哈希并创建资产实例
     # ------------------------------------------------------------------
     @classmethod
     def from_path(cls, src: str | Path, role: str = "front",
                   captured_at: Optional[str] = None,
                   device: Optional[str] = None) -> "Asset":
-        """Read src, compute hash, return Asset with hash field populated.
+        """读取源文件并计算哈希，返回已填充 `hash` 字段的 Asset。
 
-        这是写新 asset 的入口. 一次性访问 F 盘算 hash.
+        这是写入新资产的入口，只在创建时访问一次 F 盘。
         """
         return cls(
             role=role,
@@ -64,12 +62,12 @@ class Asset:
         )
 
     # ------------------------------------------------------------------
-    # thumb 派生 (零 F 盘访问)
+    # 缩略图派生（不访问 F 盘）
     # ------------------------------------------------------------------
     def thumb_filename(self) -> Optional[str]:
-        """Return thumb filename like `img20260728_17185555_a3b4c5.jpg`.
+        """返回形如 `img20260728_17185555_a3b4c5.jpg` 的缩略图文件名。
 
-        Returns None if hash is missing (legacy asset not yet migrated).
+        哈希缺失时返回 None，表示旧资产尚未迁移。
         """
         if not self.hash:
             return None
@@ -77,22 +75,22 @@ class Asset:
         return f"{stem}_{self.hash[:SHORT_HASH_LEN]}.jpg"
 
     def thumb_path(self, data_dir: str | Path) -> Optional[Path]:
-        """Full thumb path under data_dir/.thumbs/. Returns None if hash missing."""
+        """返回 `data_dir/.thumbs/` 下的完整路径；哈希缺失时返回 None。"""
         fn = self.thumb_filename()
         if not fn:
             return None
         return Path(data_dir) / THUMBS_DIRNAME / fn
 
     def has_thumb(self, data_dir: str | Path) -> bool:
-        """True if thumb file exists on disk. Pure SSD check, zero F-disk."""
+        """缩略图文件存在时返回 True；只检查 SSD，不访问 F 盘。"""
         tp = self.thumb_path(data_dir)
         return tp is not None and tp.exists()
 
     def ensure_thumb(self, data_dir: str | Path,
                      src_path: str | Path | None = None) -> Optional[Path]:
-        """生成 thumb 文件 (已存在跳过). 写入路径, 一次性访问 F 盘.
+        """生成缩略图文件，已存在时直接跳过；只在生成时访问一次 F 盘。
 
-        src_path 缺省用 self.path. Returns None if hash missing or src missing.
+        `src_path` 省略时使用 `self.path`；哈希或源文件缺失时返回 None。
         """
         tp = self.thumb_path(data_dir)
         if tp is None:
@@ -107,9 +105,9 @@ class Asset:
 
 @dataclass
 class Polaroid:
-    """A physical polaroid. May have 1..N scanned assets.
+    """一张实体拍立得，可以包含一个或多个扫描资产。
 
-    Identity is the immutable `id`. Everything else is metadata.
+    不可变的 `id` 是身份标识，其余字段均为元数据。
     """
 
     id: str
@@ -139,14 +137,14 @@ class Polaroid:
 
 
 def tag_prefix(tag: str) -> str:
-    """Return prefix part of a `prefix:value` tag. Empty string if no prefix."""
+    """返回 `prefix:value` 标签的前缀；没有前缀时返回空字符串。"""
     if ":" in tag:
         return tag.split(":", 1)[0]
     return ""
 
 
 def tag_value(tag: str) -> str:
-    """Return value part of a `prefix:value` tag. Full string if no prefix."""
+    """返回 `prefix:value` 标签的值；没有前缀时返回完整字符串。"""
     if ":" in tag:
         return tag.split(":", 1)[1]
     return tag

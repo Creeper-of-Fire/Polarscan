@@ -1,7 +1,7 @@
 [project]
 name = "polarscan"
 version = "0.0.1"
-description = "Polaroid metadata management: tag-driven indexing + minimal web app"
+description = "拍立得元数据管理：标签驱动索引与轻量网页应用"
 requires-python = ">=3.10"
 dependencies = [
     "PyYAML>=6.0",

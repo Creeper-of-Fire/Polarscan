@@ -2,7 +2,7 @@
 {% block title %}{{ p.id }}{% endblock %}
 {% block body %}
 
-{# 顶部 nav: prev/next + 跳到下一张未打标 + 日期段快跳 (JS 自己解 p.id) #}
+{# 顶部导航：上一张、下一张、下一张未打标，以及由前端解析 p.id 的日期段跳转 #}
 <div class="bench-top">
   <div class="bench-top__nav">
     {% if prev_id %}
@@ -25,15 +25,15 @@
     <span id="save-state" class="save-state save-state--idle">●</span>
   </div>
 
-  {# 日期段快跳 (从前端 JS 解析 p.id 拿段, 不靠后端 API) #}
+  {# 日期段跳转：前端解析 p.id，不调用后端 API #}
   <div class="bench-date-seg" id="bench-date-seg"></div>
 </div>
 
 <div class="bench-layout">
 
-  {# 左侧: 大图 + 资产
-     默认显示 SSD 上的 thumbnail (LIBRARY_ROOT 的 HDD 保持 idle).
-     "查看原图" 链接只在用户主动点击时才触发 F-disk 读图. #}
+  {# 左侧：大图与资产
+     默认显示 SSD 上的缩略图，让原图所在硬盘保持空闲。
+     只有用户主动点击“查看原图”时才读取 F 盘。 #}
   <div class="bench-left">
     {% if p.assets %}
       <img class="bench-img" src="/thumb/{{ p.id }}" alt="{{ p.id }}">
@@ -43,7 +43,7 @@
         </a>
       </div>
     {% else %}
-      <div class="bench-img bench-img--empty">no asset</div>
+      <div class="bench-img bench-img--empty">无资产</div>
     {% endif %}
 
     <details class="assets-block">
@@ -62,17 +62,17 @@
     </details>
   </div>
 
-  {# 右侧: metadata column - 不再 <form>, 由 JS 走 autosave endpoint 增量保存 #}
+  {# 右侧：元数据栏。不使用 <form>，由 JavaScript 调用自动保存端点增量写入 #}
   <div class="bench-right">
 
     <div class="bench-id-row">
       <code class="id-display">{{ p.id }}</code>
-      <small class="id-hint">id 是稳定身份. 改 shot_date/char 不会改变 id.</small>
+      <small class="id-hint">id 是稳定标识；修改 shot_date 或 char 不会改变它。</small>
     </div>
 
     {# =============  角色 (独立面板)  ============= #}
     <fieldset class="char-panel">
-      <legend>角色 (char)</legend>
+      <legend>角色（char）</legend>
 
       {# 已选角色 #}
       <div class="chip-stream" id="char-chips" data-prefix="char">
@@ -91,15 +91,15 @@
       {# 加角色输入 + 候选 #}
       <div class="tag-input-row">
         <input id="charInput" type="text" autocomplete="off"
-               placeholder="char 名字 (例: my_push), 联想已有角色">
+               placeholder="角色标识（例：my_push），可联想已有角色">
         <button type="button" id="addCharBtn" class="btn btn-add">+ 角色</button>
       </div>
       <div id="charSuggest" class="tag-suggest" hidden></div>
 
-      {# quick-add 横排: 已有角色池, 点一下加 #}
+      {# 横向快捷添加：点击角色池中的已有项即可加入 #}
       <div class="quick-tags" id="char-quick">
         {% if char_values %}
-          <span class="qt-label">角色池:</span>
+          <span class="qt-label">角色池：</span>
           {% for c in char_values[:18] %}
             <button type="button" class="qt-chip"
                     data-quick="char:{{ c }}">+ {{ c }}</button>
@@ -107,12 +107,12 @@
         {% endif %}
       </div>
 
-      <a class="link-secondary" href="/pool/char">→ 角色池总览 / 编辑 canonical_name / aliases</a>
+      <a class="link-secondary" href="/pool/char">→ 查看角色池并编辑规范名称与别名</a>
     </fieldset>
 
-    {# =============  其他 tag (event / theme / collection / composite / moment / shot / sig)  ============= #}
+    {# =============  其他标签（event / theme / collection / composite / moment / shot / sig）  ============= #}
     <fieldset class="other-tags-panel">
-      <legend>其他 tag</legend>
+      <legend>其他标签（tag）</legend>
 
       <div class="chip-stream" id="other-chips">
         {% for t in p.tags %}
@@ -132,8 +132,8 @@
 
       <div class="tag-input-row">
         <input id="otherInput" type="text" autocomplete="off"
-               placeholder="其他 tag (例: event:shenshan_3rd_om_cd, shot:pair)">
-        <button type="button" id="addOtherBtn" class="btn btn-add">+ tag</button>
+               placeholder="其他标签（例：event:shenshan_3rd_om_cd、shot:pair）">
+        <button type="button" id="addOtherBtn" class="btn btn-add">+ 标签</button>
       </div>
       <div id="otherSuggest" class="tag-suggest" hidden></div>
 
@@ -153,28 +153,28 @@
       </div>
     </fieldset>
 
-    {# =============  shot_date / notes  ============= #}
+    {# =============  拍摄日期与备注  ============= #}
     <fieldset>
-      <legend>拍摄日期 (shot_date)</legend>
+      <legend>拍摄日期（shot_date）</legend>
       <input id="shotDateInput" type="text" value="{{ p.shot_date or '' }}"
              placeholder="YYYY-MM-DD">
 
-      {# 候选日期: 从 id 解析范围, 列出范围内每天作为点击选项. 绝不自动写, 等用户选. #}
+      {# 从 id 解析日期范围并列出每天的候选按钮，只在用户点选后写入 #}
       {% set date_range = p.id | id_date_range %}
       {% if date_range %}
         <div class="date-range-candidates">
-          <span class="drc-label">id 范围 → 点选填入:</span>
+          <span class="drc-label">id 日期范围 → 点选填入：</span>
           {% for d in date_range %}
             <button type="button" class="drc-btn" data-date="{{ d }}">{{ d }}</button>
           {% endfor %}
         </div>
       {% endif %}
 
-      <small class="hint">自动保存: 改完停下 ~0.6s</small>
+      <small class="hint">自动保存：停止输入约 0.6 秒后写入</small>
     </fieldset>
 
     <fieldset>
-      <legend>notes</legend>
+      <legend>备注（notes）</legend>
       <textarea id="notesInput" rows="6">{{ p.notes }}</textarea>
     </fieldset>
 
@@ -186,12 +186,11 @@
   </div>
 </div>
 
-{# bench 工作台 JS
-   - autosave: tag 加/删立即 POST, shot_date/notes 防抖 600ms POST
-   - id 日期段解析: 纯 JS, 不调后端 API
-   - char / other tag 分块管理
-   - 段内导航 (←该段第一张 / 该段最后一张→): 从 localStorage 读全表 id
-     (list 页面已把 polaroid 列表缓存到 'polarscan:polaroids:v1') #}
+{# 工作台脚本
+   - 标签增减后立即自动保存；shot_date 与 notes 停止输入 600 毫秒后保存
+   - 日期段由前端解析 id，不调用后端 API
+   - 角色标签与其他标签分区管理
+   - 段内导航从 localStorage 读取全部 id；列表页已缓存到 'polarscan:polaroids:v1' #}
 <script>
 (function () {
   const PID = {{ p.id|tojson }};
@@ -200,8 +199,6 @@
 
   // ---------- 状态指示 ----------
   const saveStateEl = document.getElementById('save-state');
-  let saveTimer = null;
-  let pendingAfterSave = null;        // callback after save returns
   function setSaveState(s) {
     saveStateEl.className = 'save-state save-state--' + s;
     saveStateEl.textContent = ({
@@ -213,10 +210,9 @@
   }
   setSaveState('idle');
 
-  // ---------- autosave: 通用 ----------
-  // type: 'tags' | 'shot_date' | 'notes'
+  // ---------- 通用自动保存 ----------
+  // 可传字段包括 tags、shot_date 和 notes
   function autosave(fields) {
-    if (saveTimer) clearTimeout(saveTimer);
     setSaveState('saving');
     const body = new URLSearchParams();
     if ('tags' in fields) body.set('tags', fields.tags.join(', '));
@@ -235,8 +231,8 @@
     });
   }
 
-  // ---------- char / other tag 统一管理 ----------
-  // 当前 polaroid 全 tag 列表 (含已加未同步的)
+  // ---------- 统一管理角色标签与其他标签 ----------
+  // 当前拍立得的全部标签，包括尚未同步的新增项
   function readAllTags() {
     return [
       ...readStreamTags('char-chips'),
@@ -249,11 +245,11 @@
       .map(c => c.dataset.tag);
   }
   function saveTagsDebounced() {
-    // 这里用立即保存, tag 加/删不该 debounce, 每次 +/- 都 autosave
+    // 标签增减应立即保存，不做防抖
     autosave({ tags: readAllTags() });
   }
 
-  // 通用 chip streamer 管理器
+  // 通用标签流管理器
   function setupStream(streamId, addInputId, addBtnId, suggestId, quickSelector,
                       prefix, allSuggestions, allowFreeform) {
     const stream = document.getElementById(streamId);
@@ -263,7 +259,7 @@
     const idPrefix = `${prefix}:`;
     const freeformAllowed = !!allowFreeform;
 
-    // 计算候选 (限定 prefix 下的 tags)
+    // 计算候选项，并限制在指定前缀下
     const suggests = freeformAllowed
       ? allSuggestions.slice()
       : allSuggestions.filter(s => s.startsWith(idPrefix) || !s.includes(':'));
@@ -277,7 +273,7 @@
     function addChip(raw) {
       raw = (raw || '').trim();
       if (!raw) return;
-      // 自动补 prefix (用户在 character panel 里输入 "my_push" 自动补 "char:my_push")
+      // 自动补全前缀：用户输入 "my_push" 时补为 "char:my_push"
       if (!freeformAllowed && !raw.includes(':')) {
         raw = idPrefix + raw;
       }
@@ -300,7 +296,7 @@
       saveTagsDebounced();
     }
 
-    // X 删除
+    // 点击 × 删除标签
     stream.addEventListener('click', (e) => {
       const btn = e.target.closest('.chip-x');
       if (btn) {
@@ -351,13 +347,13 @@
       }
     });
 
-    // quick-add 按钮
+    // 快捷添加按钮
     stream.parentElement.querySelectorAll(quickSelector + ' [data-quick]').forEach(btn => {
       btn.addEventListener('click', () => addChip(btn.dataset.quick));
     });
   }
 
-  // ---------- 已用 suggestions ----------
+  // ---------- 已使用的候选项 ----------
   const allSuggestions = [
     {% for c in char_values %}'char:{{ c }}',{% endfor %}
     {% for c in event_values %}'event:{{ c }}',{% endfor %}
@@ -369,17 +365,17 @@
     {% for c in sig_values %}'sig:{{ c }}',{% endfor %}
   ].filter(Boolean);
 
-  // character panel: 自动补 prefix 'char:' (用户输入框只输入名字)
+  // 角色面板自动补全 `char:` 前缀，输入框只需填写名字
   setupStream(
     'char-chips', 'charInput', 'addCharBtn', 'charSuggest',
-    '#char-quick', 'char', allSuggestions, /* freeformAllowed */ false);
+    '#char-quick', 'char', allSuggestions, /* 是否允许自由格式 */ false);
 
-  // other tag panel: 必须含 prefix, 否则不补, freeform
+  // 其他标签面板要求用户提供前缀，不自动补全，并允许自由格式
   setupStream(
     'other-chips', 'otherInput', 'addOtherBtn', 'otherSuggest',
-    '#other-quick', '', allSuggestions, /* freeformAllowed */ true);
+    '#other-quick', '', allSuggestions, /* 是否允许自由格式 */ true);
 
-  // ---------- shot_date 防抖 + id 范围候选按钮 ----------
+  // ---------- 拍摄日期字段防抖与 id 日期范围候选按钮 ----------
   const shotInput = document.getElementById('shotDateInput');
   let shotTimer = null;
   shotInput.addEventListener('input', () => {
@@ -390,7 +386,7 @@
     }, 600);
   });
 
-  // 候选日期按钮: 点击填入 input 并触发 input 事件 (走 autosave)
+  // 点击候选日期后填入输入框，并触发自动保存
   document.querySelectorAll('.drc-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       shotInput.value = btn.dataset.date;
@@ -399,7 +395,7 @@
     });
   });
 
-  // ---------- notes 防抖 ----------
+  // ---------- 备注字段防抖 ----------
   const notesInput = document.getElementById('notesInput');
   let notesTimer = null;
   notesInput.addEventListener('input', () => {
@@ -419,15 +415,15 @@
   });
 
   // ============================================================
-  // 顶部: 日期段快跳 (id 内嵌的日期段, 纯 JS 解析)
-  //   从 localStorage 读 list 页面缓存的全表 id;
-  //   找不到缓存 (用户从书签直接进 bench) 提示去 list 页面先逛一次.
+  // 顶部日期段跳转：由 JavaScript 解析 id 中的日期段
+  // 从 localStorage 读取列表页缓存的全部 id；
+  // 找不到缓存时，提示用户先打开一次列表页。
   // ============================================================
   (function setupDateSegment() {
     const el = document.getElementById('bench-date-seg');
     const m = PID.match(/^(\d{4}-\d{2}-\d{2}(?:-\d{2})?)--/);
     if (!m) {
-      el.innerHTML = '<small class="hint" style="margin-left:8px">id 不在路径日期段格式 (手命名)</small>';
+      el.innerHTML = '<small class="hint" style="margin-left:8px">id 不符合路径日期段格式（手动命名）</small>';
       return;
     }
     const seg = m[1];
@@ -437,12 +433,12 @@
       const raw = localStorage.getItem(POLAR_KEY);
       if (!raw) {
         el.innerHTML = '<small class="hint" style="margin-left:8px">' +
-          '段内导航需先逛一次 <a href="/list">/list</a> 页面加载 polaroid 列表</small>';
+          '段内导航需要先打开一次 <a href="/list">列表页</a>，以加载拍立得列表</small>';
         return;
       }
       allPolars = JSON.parse(raw);
     } catch (e) {
-      el.innerHTML = '<small class="hint" style="margin-left:8px">localStorage 不可用, 段内导航禁用</small>';
+      el.innerHTML = '<small class="hint" style="margin-left:8px">localStorage 不可用，已禁用段内导航</small>';
       return;
     }
 
@@ -451,9 +447,9 @@
       return mm && mm[1] === seg;
     });
 
-    el.innerHTML = '<span class="ds-label">本段:</span>' +
+    el.innerHTML = '<span class="ds-label">本段：</span>' +
       '<span class="ds-seg">' + escapeHtml(seg) + '</span>' +
-      '<span class="ds-count">(' + inSection.length + ' 张)</span>' +
+      '<span class="ds-count">（' + inSection.length + ' 张）</span>' +
       (inSection.length > 1
         ? '<a class="ds-link" id="ds-prev" href="#">← 该段第一张</a>' +
           '<a class="ds-link" id="ds-next" href="#">该段最后一张 →</a>'
@@ -472,7 +468,7 @@
     }
   })();
 
-  // ---------- helpers ----------
+  // ---------- 辅助函数 ----------
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);

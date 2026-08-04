@@ -1,4 +1,4 @@
-"""Load/save the single _index.yaml file. Source of truth."""
+"""读写唯一的 `_index.yaml` 真值文件。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,15 +16,15 @@ def _default() -> dict[str, Any]:
     return {
         "library_root": None,  # 自己就是数据目录
         "version": 1,
-        "tags": {},           # 按 prefix nested 的 metadata 池 (lazy)
+        "tags": {},           # 按前缀嵌套的元数据池，按需填充
         "polaroids": [],
     }
 
 
 def read_index(library_root: str | Path) -> dict[str, Any]:
-    """Load _index.yaml from `library_root`. Returns empty structure if missing.
+    """从 `library_root` 读取 `_index.yaml`；文件不存在时返回默认结构。
 
-    Schema is dict with keys: library_root, version, tags, polaroids.
+    数据结构包含 `library_root`、`version`、`tags` 和 `polaroids`。
     """
     path = Path(library_root) / INDEX_FILENAME
     if not path.exists():
@@ -33,7 +33,7 @@ def read_index(library_root: str | Path) -> dict[str, Any]:
         return d
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
-    # backfill missing top-level keys
+    # 补齐缺失的顶层字段
     defaults = _default()
     for k, v in defaults.items():
         data.setdefault(k, v)
@@ -43,7 +43,7 @@ def read_index(library_root: str | Path) -> dict[str, Any]:
         data["tags"] = {}
     if not isinstance(data.get("polaroids"), list):
         data["polaroids"] = []
-    # tags 内部 None / 非 dict 值清掉 (历史 bootstrap 残留)
+    # 清理标签池中的空值或非字典值，这是初始化脚本的历史残留
     for prefix in list(data["tags"].keys()):
         if not isinstance(data["tags"][prefix], dict):
             data["tags"][prefix] = {}
@@ -51,7 +51,7 @@ def read_index(library_root: str | Path) -> dict[str, Any]:
 
 
 def write_index(library_root: str | Path, data: dict[str, Any]) -> None:
-    """Atomic save of _index.yaml. tmp + rename."""
+    """原子写入 `_index.yaml`：先写临时文件，再重命名替换。"""
     path = Path(library_root) / INDEX_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".yaml.tmp")

@@ -5,12 +5,12 @@
 <h2><code>{{ prefix }}</code> 池 — 已注册 {{ items|length }} 条</h2>
 
 {% if not items %}
-  <p class="hint">还没在这个 prefix 下注册任何 tag. 你可以从工作台给某张拍立得打 <code>{{ prefix }}:xxx</code> 的 tag,
-  系统会自动提议用这些 key. 之后回到这里加元数据 (canonical_name / aliases / notes).</p>
+  <p class="hint">当前前缀下还没有注册标签。可以先在工作台添加 <code>{{ prefix }}:xxx</code>，
+  系统会把已使用的键加入候选；之后再回到这里补充规范名称、别名和备注。</p>
 {% else %}
 <table class="pool-table">
   <thead>
-    <tr><th>key</th><th>canonical_name</th><th>aliases</th><th>notes</th><th>其他</th><th>被 N 张用</th><th></th></tr>
+    <tr><th>键</th><th>规范名称</th><th>别名</th><th>备注</th><th>其他字段</th><th>使用数量</th><th></th></tr>
   </thead>
   <tbody>
     {% for it in items %}

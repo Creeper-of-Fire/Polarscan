@@ -1,66 +1,68 @@
 # Polarscan
 
-拍立得扫描件的元数据管理系统。核心架构：
+拍立得扫描件元数据管理系统。核心架构：
 
-- 单文件真值层 `_index.yaml`（在数据目录）
-- 多工具分层：`core`（引擎）/ `api`（接口）/ `apps`（wrapper）
-- tag = 字符串，前缀驱动多态（`char:strawberry`, `event:xxx` 等）
-- 缩略图缓存独立目录 `.thumbs/`
-- 原 PNG 只读，软件不越界改图
+- 单一真值文件：数据目录中的 `_index.yaml`
+- 分层结构：`core`（核心引擎）、`api`（公开接口）、`apps`（应用层）
+- 标签以字符串存储，并由前缀区分语义（如 `char:电电Aki`、`event:xxx`）
+- 缩略图缓存在独立的 `.thumbs/` 目录
+- 原始 PNG 始终只读，程序不会修改图像内容
 
 ## 安装
 
-```bash
-cd D:\Dev\Workspace\Polarscan
-pip install -e .
+```powershell
+Set-Location D:\Dev\Workspace\Polarscan
+python -m pip install -e .
 ```
 
-依赖：PyYAML, Pillow, FastAPI, uvicorn, jinja2, python-multipart。
+依赖：PyYAML、Pillow、FastAPI、uvicorn、jinja2、python-multipart。
 
-## 启动 Web 前端
+## 启动网页界面
 
-```bash
-# 数据路径在 server.py 里改 LIBRARY_ROOT
+```powershell
 python -m apps.web.server
 ```
 
-浏览器打开 http://127.0.0.1:8765
+索引文件和缩略图默认写入项目根目录。浏览器打开 <http://127.0.0.1:8765>。
 
 ## 项目结构
 
-```
+```text
 polarscan/
-  core/            # 引擎 (load/save/thumb/path)
-    index.py       # Polaroid / Asset dataclass
-    storage.py     # _index.yaml 读写
-    thumb.py       # 缩略图生成 + 缓存
-    resolver.py    # asset 路径解析
-  api.py           # Python API（apps 必须走这里）
+  core/                  # 核心引擎
+    index.py             # Polaroid、Asset 数据模型与标签辅助函数
+    storage.py           # _index.yaml 读写
+    asset_thumb.py       # 资产哈希与缩略图生成
+    id_gen.py            # 拍立得 id 派生
+  api.py                 # 公开 Python 接口，应用层必须经由这里访问
 
 apps/
-  web/             # FastAPI 本地 web 前端
+  web/                   # FastAPI 本地网页界面
     server.py
     templates/
     static/
+
+tests/                   # 隔离运行的核心与网页端测试
 ```
 
-## tag 约定
+## 标签前缀约定
 
-| prefix  | 语义              |
-|---------|-------------------|
-| char    | 角色 (含真人)     |
-| event   | 有具体日期的活动  |
-| theme   | 跨日期主题        |
-| moment  | 轻量 / 一次性 moment |
-| collection | 跨事件系列       |
-| composite | 多 polaroid 联合呈现 |
-| shot    | solo/pair/group   |
-| sig     | signature 状态     |
+| 前缀 | 含义 |
+|---|---|
+| `char` | 角色（含真人） |
+| `event` | 有明确日期的活动 |
+| `theme` | 跨日期主题 |
+| `moment` | 轻量的一次性时刻 |
+| `collection` | 跨事件系列 |
+| `composite` | 多张拍立得的组合展示 |
+| `shot` | 构图类型（`solo`、`pair`、`group`） |
+| `sig` | 签名状态 |
 
-约定写在 `config`，display 按 prefix 多态路由。
+标签元数据保存在 `_index.yaml` 的 `tags` 字段中，界面按前缀选择对应的展示与编辑方式。
 
 ## 设计原则
 
-- 软件只做：读 yaml / 生成 thumb / 渲染前端 / 写回 yaml。
-- 原 PNG 只读，不动一字节。
-- 复杂任务 agent 干，不塞给软件。
+- 程序只负责读写 YAML、生成缩略图、渲染界面和调用公开接口。
+- 应用层只能通过 `polarscan.api.Polarscan` 修改数据，不能直接写入 YAML。
+- 原始 PNG 只读，不改动任何字节。
+- 根目录下划线开头的脚本用于一次性维护任务，默认不纳入 Git。
