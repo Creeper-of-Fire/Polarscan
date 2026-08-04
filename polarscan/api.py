@@ -11,15 +11,12 @@ from typing import Any, Optional
 from .core import (
     Asset,
     Polaroid,
-    get_or_make_thumb,
     list_polaroids,
     make_polaroid_id,
     parse_primary_char,
     read_index,
-    resolve_asset_path,
     tag_prefix,
     tag_value,
-    thumb_path,
     write_index,
 )
 from .core.id_gen import parse_primary_char as _parse_primary_char  # noqa: F401
@@ -28,25 +25,25 @@ from .core.id_gen import parse_primary_char as _parse_primary_char  # noqa: F401
 class Polarscan:
     """Single library handle. Holds an in-memory copy of _index.yaml.
 
-    Typical flow:
-        ps = Polarscan("/path/to/library")
-        for p in ps.polaroids():
-            ...
-        p = ps.polaroid("some_id")
-        ps.upsert_polaroid(p)
-        ps.save()
+    Single path:
+        data_dir  — where _index.yaml + .thumbs/ live (typically SSD, code repo)
+
+    NOTE: asset paths in _index.yaml are stored as ABSOLUTE paths (e.g.
+    `F:\\相册\\...\\img.png`), so we never need a 'library_root' at runtime.
+    Only the bootstrap (one-shot scan) script needs a library root as
+    a scan starting point.
     """
 
-    def __init__(self, library_root: str | Path):
-        self.library_root = Path(library_root)
-        self._data: dict[str, Any] = read_index(self.library_root)
+    def __init__(self, data_dir: str | Path):
+        self.data_dir = Path(data_dir)
+        self._data: dict[str, Any] = read_index(self.data_dir)
 
     # ---- lifecycle ----
     def reload(self) -> None:
-        self._data = read_index(self.library_root)
+        self._data = read_index(self.data_dir)
 
     def save(self) -> None:
-        write_index(self.library_root, self._data)
+        write_index(self.data_dir, self._data)
 
     # ---- query ----
     def polaroids(self) -> list[Polaroid]:
@@ -85,20 +82,27 @@ class Polarscan:
         return len(self._data["polaroids"]) < before
 
     # ---- assets ----
-    def first_asset_path(self, p: Polaroid) -> Optional[Path]:
-        if not p.assets:
-            return None
-        ap = resolve_asset_path(self.library_root, p.assets[0].path)
-        return ap if ap.exists() else None
+    def thumb_path_for(self, p: Polaroid, asset_idx: int = 0) -> Optional[Path]:
+        """Ensure thumb exists for p.assets[asset_idx], return path or None.
 
-    def thumb_path_for(self, p: Polaroid) -> Optional[Path]:
-        """Ensure thumb exists for the polaroid's first asset, return path or None."""
-        if not p.assets:
+        asset_idx 显式指定: 0..len(p.assets)-1. 越界或 p.assets 空 → None.
+
+        设计:
+        - Thumb 文件名 = `{stem}_{asset.hash[:6]}.jpg`, 完全基于 asset.hash 字段派生.
+        - 浏览零 F 盘: thumb 已存在 → 直接返回 (纯 SSD stat).
+        - Thumb 缺失 → lazy 调用 Asset.ensure_thumb (一次性访问 F 盘).
+        - Hash 缺失 (老资产未迁移) → 返回 None, UI 提示用户跑迁移脚本.
+        """
+        if not p.assets or asset_idx < 0 or asset_idx >= len(p.assets):
             return None
-        ap = self.first_asset_path(p)
-        if ap is None:
-            return None
-        return get_or_make_thumb(self.library_root, p.id, ap)
+        asset = p.assets[asset_idx]
+        tp = asset.thumb_path(self.data_dir)
+        if tp is None:
+            return None  # hash 缺失: 资产未迁移
+        if tp.exists():
+            return tp   # 浏览零 F 盘
+        # thumb 缺失: lazy 生成 (一次性 F 盘访问)
+        return asset.ensure_thumb(self.data_dir)
 
     # ---- tag registry (metadata enrichment, lazy) ----
     def tag_metadata(self, prefix: str) -> dict[str, Any]:
@@ -117,13 +121,18 @@ class Polarscan:
 
     def all_tags_with_prefix(self, prefix: str) -> list[str]:
         """Return all tags (id form, no value resolution) used by any polaroid,
-        filtered by prefix. Useful for autocomplete in UI."""
-        seen: set[str] = set()
+        filtered by prefix. Useful for autocomplete in UI.
+
+        按使用频率降序, 同频次按 key 字母序升序. 让 bench quick-add 按钮
+        和 autocomplete 候选里最常用的排最前.
+        """
+        counts: dict[str, int] = {}
         for p in self.polaroids():
             for t in p.tags:
                 if tag_prefix(t) == prefix:
-                    seen.add(tag_value(t))
-        return sorted(seen)
+                    v = tag_value(t)
+                    counts[v] = counts.get(v, 0) + 1
+        return sorted(counts.keys(), key=lambda k: (-counts[k], k))
 
     # ---- id 派生 (GUI 工作台用) ----
     def suggest_id(self, shot_date: str | None, tags: list[str]) -> str:

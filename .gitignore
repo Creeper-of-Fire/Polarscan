@@ -10,3 +10,11 @@ venv/
 .vscode/
 *.log
 .DS_Store
+
+# Polarscan 数据: 派生数据 (索引/缩略图) 不进 git
+_index.yaml
+_index.yaml.tmp
+.thumbs/
+
+# Polarscan 一次性脚本: 下划线开头不进 git (约定, 见 _*.py 文件顶部 docstring)
+_*.py

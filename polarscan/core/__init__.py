@@ -7,15 +7,16 @@ from .storage import (
     write_index,
     list_polaroids,
 )
-from .thumb import (
+from .asset_thumb import (
     THUMBS_DIRNAME,
     LONG_EDGE,
     QUALITY,
-    make_thumb,
-    get_or_make_thumb,
-    thumb_path,
+    HASH_ALGO,
+    HASH_HEX_LEN,
+    SHORT_HASH_LEN,
+    compute_hash,
+    make_thumb_image,
 )
-from .resolver import resolve_asset_path
 from .id_gen import make_polaroid_id, parse_primary_char
 
 __all__ = [
@@ -30,10 +31,11 @@ __all__ = [
     "THUMBS_DIRNAME",
     "LONG_EDGE",
     "QUALITY",
-    "make_thumb",
-    "get_or_make_thumb",
-    "thumb_path",
-    "resolve_asset_path",
+    "HASH_ALGO",
+    "HASH_HEX_LEN",
+    "SHORT_HASH_LEN",
+    "compute_hash",
+    "make_thumb_image",
     "make_polaroid_id",
     "parse_primary_char",
 ]

@@ -123,6 +123,12 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   background: #f0f0f3;
   border-radius: 4px;
 }
+.bench-img-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+.bench-img-toolbar .link-secondary { font-size: 12px; }
 
 .assets-block { font-size: 12px; border-top: 1px dashed #ddd; padding-top: 10px; }
 .assets-block summary { cursor: pointer; color: #555; }
@@ -378,3 +384,110 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 
 .extras-block { border-top: 1px dashed #e0e0e3; padding-top: 8px; }
 .extras-block summary { cursor: pointer; color: #555; }
+
+/* ===== Bench 工作台 - 角色/其他 tag 独立面板 ===== */
+.bench-right fieldset {
+  border: 1px solid #e0e0e3;
+  border-radius: 5px;
+  padding: 10px 12px 12px;
+  margin: 0;
+  background: #fff;
+}
+.bench-right fieldset legend {
+  font-size: 12px;
+  color: #555;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 6px;
+}
+.char-panel legend { color: #c41e5b; }
+.other-tags-panel legend { color: #1d4fbb; }
+
+/* ===== Bench 顶部: 保存状态指示 ===== */
+.save-state {
+  display: inline-block;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  margin-left: 8px;
+  user-select: none;
+  white-space: nowrap;
+}
+.save-state--idle   { background: #e6f4ea; color: #1e7a3e; }
+.save-state--saving { background: #fff8c4; color: #826200; }
+.save-state--dirty  { background: #fef0e7; color: #b85a00; }
+.save-state--error  { background: #fde2e2; color: #c0392b; }
+
+/* ===== Bench 顶部: 日期段快跳 widget ===== */
+.bench-date-seg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e0e0e3;
+  font-size: 12px;
+}
+.bench-date-seg:empty { display: none; }
+.ds-label { color: #777; font-weight: 600; }
+.ds-seg {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  background: #eef2f8;
+  color: #2b4f80;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.ds-count { color: #888; font-size: 11px; }
+.ds-link {
+  margin-left: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid #d0d0d4;
+  border-radius: 12px;
+  color: #1f2328;
+  text-decoration: none;
+  background: #fff;
+}
+.ds-link:hover { background: #f0f0f3; border-color: #888; }
+
+/* ===== Shot-date / notes 输入 ===== */
+#shotDateInput, #notesInput {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid #d0d0d4;
+  border-radius: 4px;
+  background: #fff;
+}
+#shotDateInput:focus, #notesInput:focus { border-color: #1f2328; outline: 0; }
+#notesInput { resize: vertical; min-height: 90px; }
+
+/* shot_date 候选日期按钮 (从 id 范围解析) */
+.date-range-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+}
+.drc-label {
+  font-size: 11px;
+  color: #777;
+  margin-right: 4px;
+}
+.drc-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid #d6c4ff;
+  background: #f0e6ff;
+  color: #5a32a3;
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+.drc-btn:hover { background: #e6dcff; border-color: #b89aff; }
+.drc-btn:active { background: #d6c4ff; }

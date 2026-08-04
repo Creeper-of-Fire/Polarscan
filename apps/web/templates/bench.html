@@ -2,7 +2,7 @@
 {% block title %}{{ p.id }}{% endblock %}
 {% block body %}
 
-{# 顶部固定 navigation bar #}
+{# 顶部 nav: prev/next + 跳到下一张未打标 + 日期段快跳 (JS 自己解 p.id) #}
 <div class="bench-top">
   <div class="bench-top__nav">
     {% if prev_id %}
@@ -19,22 +19,33 @@
       <span class="btn btn-nav btn-disabled">下一张 ›</span>
     {% endif %}
     {% if next_untagged_id %}
-      <a class="btn btn-jump" href="/bench/{{ next_untagged_id }}/goto/untagged">跳到下一张未打标</a>
+      <a class="btn btn-jump" href="/bench/{{ p.id }}/goto/untagged">跳到下一张未打标</a>
     {% endif %}
+    <span class="spacer"></span>
+    <span id="save-state" class="save-state save-state--idle">●</span>
   </div>
+
+  {# 日期段快跳 (从前端 JS 解析 p.id 拿段, 不靠后端 API) #}
+  <div class="bench-date-seg" id="bench-date-seg"></div>
 </div>
 
 <div class="bench-layout">
 
-  {# 左侧: 大图 #}
+  {# 左侧: 大图 + 资产
+     默认显示 SSD 上的 thumbnail (LIBRARY_ROOT 的 HDD 保持 idle).
+     "查看原图" 链接只在用户主动点击时才触发 F-disk 读图. #}
   <div class="bench-left">
     {% if p.assets %}
-      <img class="bench-img" src="/img/{{ p.id }}" alt="{{ p.id }}">
+      <img class="bench-img" src="/thumb/{{ p.id }}" alt="{{ p.id }}">
+      <div class="bench-img-toolbar">
+        <a class="link-secondary" href="/img/{{ p.id }}" target="_blank" rel="noopener">
+          查看原图 (F 盘, 主动点开才读) ↗
+        </a>
+      </div>
     {% else %}
       <div class="bench-img bench-img--empty">no asset</div>
     {% endif %}
 
-    {# 资产列表 (只读) #}
     <details class="assets-block">
       <summary>资产 ({{ p.assets|length }})</summary>
       <ul class="asset-list">
@@ -51,152 +62,302 @@
     </details>
   </div>
 
-  {# 右侧: metadata column #}
-  <form method="post" action="/bench/{{ p.id }}" class="bench-right">
+  {# 右侧: metadata column - 不再 <form>, 由 JS 走 autosave endpoint 增量保存 #}
+  <div class="bench-right">
 
     <div class="bench-id-row">
-      <code class="id-display" title="id 是派生的, 改了 shot_date/char 之后此 id 不变">{{ p.id }}</code>
-      <small class="id-hint">派生建议: <code>{{ suggested_id }}</code> (新建时用, 已存在则冻住)</small>
+      <code class="id-display">{{ p.id }}</code>
+      <small class="id-hint">id 是稳定身份. 改 shot_date/char 不会改变 id.</small>
     </div>
 
-    <div class="field">
-      <label>拍摄日期 (shot_date)</label>
-      <input name="shot_date" type="text" value="{{ p.shot_date or '' }}" placeholder="YYYY-MM-DD">
-    </div>
+    {# =============  角色 (独立面板)  ============= #}
+    <fieldset class="char-panel">
+      <legend>角色 (char)</legend>
 
-    <div class="field">
-      <label>tags (逗号分隔; 点击 chip 跳到池编辑; X 删)</label>
-
-      <div class="chip-stream" id="chips">
+      {# 已选角色 #}
+      <div class="chip-stream" id="char-chips" data-prefix="char">
         {% for t in p.tags %}
-          {% set parts = t.split(':', 1) %}
-          {% set pfx = parts[0] if ':' in t else 'plain' %}
-          {% set val = parts[1] if ':' in t else t %}
-          <span class="chip chip-{{ pfx }}{% if focus_tag == t %} chip-focus{% endif %}">
-            <a class="chip-body" href="/pool/{{ pfx }}/{{ val }}/edit?return_to=/bench/{{ p.id }}%3Ffocus%3D{{ t|urlencode }}">{{ t }}</a>
-            <button type="button" class="chip-x" data-remove-tag="{{ t }}" title="移除">×</button>
-          </span>
+          {% if t.startswith('char:') or (':' not in t) %}
+            {% set val = t[5:] if t.startswith('char:') else t %}
+            <span class="chip chip-char" data-tag="{{ t }}">
+              <a class="chip-body" href="/pool/char/{{ val|urlencode }}/edit?return_to=/bench/{{ p.id|urlencode }}">{{ t }}</a>
+              <button type="button" class="chip-x" title="移除">×</button>
+            </span>
+          {% endif %}
+        {% endfor %}
+        <span class="chip chip-add">+</span>
+      </div>
+
+      {# 加角色输入 + 候选 #}
+      <div class="tag-input-row">
+        <input id="charInput" type="text" autocomplete="off"
+               placeholder="char 名字 (例: my_push), 联想已有角色">
+        <button type="button" id="addCharBtn" class="btn btn-add">+ 角色</button>
+      </div>
+      <div id="charSuggest" class="tag-suggest" hidden></div>
+
+      {# quick-add 横排: 已有角色池, 点一下加 #}
+      <div class="quick-tags" id="char-quick">
+        {% if char_values %}
+          <span class="qt-label">角色池:</span>
+          {% for c in char_values[:18] %}
+            <button type="button" class="qt-chip"
+                    data-quick="char:{{ c }}">+ {{ c }}</button>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <a class="link-secondary" href="/pool/char">→ 角色池总览 / 编辑 canonical_name / aliases</a>
+    </fieldset>
+
+    {# =============  其他 tag (event / theme / collection / composite / moment / shot / sig)  ============= #}
+    <fieldset class="other-tags-panel">
+      <legend>其他 tag</legend>
+
+      <div class="chip-stream" id="other-chips">
+        {% for t in p.tags %}
+          {% if not (t.startswith('char:') or (':' not in t)) %}
+            {% set parts = t.split(':', 1) %}
+            {% set pfx = parts[0] %}
+            {% set val = parts[1] if ':' in t else '' %}
+            <span class="chip chip-{{ pfx }}" data-tag="{{ t }}">
+              <a class="chip-body"
+                 href="/pool/{{ pfx|urlencode }}/{{ val|urlencode }}/edit?return_to=/bench/{{ p.id|urlencode }}">{{ t }}</a>
+              <button type="button" class="chip-x" title="移除">×</button>
+            </span>
+          {% endif %}
         {% endfor %}
         <span class="chip chip-add">+</span>
       </div>
 
       <div class="tag-input-row">
-        <input id="tagInput" type="text" autocomplete="off" placeholder="输入 tag (如 char:strawberry), 按 + 加">
-        <button type="button" id="addTagBtn" class="btn btn-add">+ 添加</button>
+        <input id="otherInput" type="text" autocomplete="off"
+               placeholder="其他 tag (例: event:shenshan_3rd_om_cd, shot:pair)">
+        <button type="button" id="addOtherBtn" class="btn btn-add">+ tag</button>
       </div>
+      <div id="otherSuggest" class="tag-suggest" hidden></div>
 
-      {# 自动补全候选 #}
-      <div id="tagSuggest" class="tag-suggest" hidden></div>
-
-      {# quick-add 横排常用 tags (建议性的, 来自历史) #}
-      <div class="quick-tags">
-        {% if char_values %}
-          <span class="qt-label">常用角色:</span>
-          {% for c in char_values[:8] %}
-            <button type="button" class="qt-chip" data-quick="char:{{ c }}">+ char:{{ c }}</button>
-          {% endfor %}
-        {% endif %}
+      <div class="quick-tags" id="other-quick">
         {% if shot_values %}
           <span class="qt-label">shot:</span>
           {% for c in shot_values[:5] %}
-            <button type="button" class="qt-chip" data-quick="shot:{{ c }}">+ shot:{{ c }}</button>
+            <button type="button" class="qt-chip" data-quick="shot:{{ c }}">+ {{ c }}</button>
+          {% endfor %}
+        {% endif %}
+        {% if sig_values %}
+          <span class="qt-label">sig:</span>
+          {% for c in sig_values[:5] %}
+            <button type="button" class="qt-chip" data-quick="sig:{{ c }}">+ {{ c }}</button>
           {% endfor %}
         {% endif %}
       </div>
+    </fieldset>
 
-      {# 隐藏字段真正提交 tags 列表 #}
-      <input type="hidden" name="tags" id="tagsHidden">
-    </div>
+    {# =============  shot_date / notes  ============= #}
+    <fieldset>
+      <legend>拍摄日期 (shot_date)</legend>
+      <input id="shotDateInput" type="text" value="{{ p.shot_date or '' }}"
+             placeholder="YYYY-MM-DD">
 
-    <div class="field">
-      <label>notes</label>
-      <textarea name="notes" rows="6" placeholder="">{{ p.notes }}</textarea>
-    </div>
+      {# 候选日期: 从 id 解析范围, 列出范围内每天作为点击选项. 绝不自动写, 等用户选. #}
+      {% set date_range = p.id | id_date_range %}
+      {% if date_range %}
+        <div class="date-range-candidates">
+          <span class="drc-label">id 范围 → 点选填入:</span>
+          {% for d in date_range %}
+            <button type="button" class="drc-btn" data-date="{{ d }}">{{ d }}</button>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <small class="hint">自动保存: 改完停下 ~0.6s</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>notes</legend>
+      <textarea id="notesInput" rows="6">{{ p.notes }}</textarea>
+    </fieldset>
 
     <div class="bench-actions">
-      <button type="submit" class="btn btn-primary">💾 保存</button>
-      <a class="btn" href="/bench/{{ p.id }}">取消</a>
       <span class="spacer"></span>
-      <button type="submit" formaction="/bench/{{ p.id }}/delete" class="btn btn-danger"
+      <button type="button" id="deleteBtn" class="btn btn-danger"
               onclick="return confirm('删除 {{ p.id }}?')">删除这张</button>
     </div>
-  </form>
+  </div>
 </div>
 
-{# chip 交互 JS: 删 / 加 / 自动补全 #}
+{# bench 工作台 JS
+   - autosave: tag 加/删立即 POST, shot_date/notes 防抖 600ms POST
+   - id 日期段解析: 纯 JS, 不调后端 API
+   - char / other tag 分块管理
+   - 段内导航 (←该段第一张 / 该段最后一张→): 从 localStorage 读全表 id
+     (list 页面已把 polaroid 列表缓存到 'polarscan:polaroids:v1') #}
 <script>
 (function () {
-  const form = document.querySelector('.bench-right');
-  const chipsEl = document.getElementById('chips');
-  const input = document.getElementById('tagInput');
-  const addBtn = document.getElementById('addTagBtn');
-  const suggestEl = document.getElementById('tagSuggest');
-  const hidden = document.getElementById('tagsHidden');
+  const PID = {{ p.id|tojson }};
+  const POLAR_KEY = 'polarscan:polaroids:v1';
+  const AUTOSAVE_URL = '/bench/' + encodeURIComponent(PID) + '/autosave';
 
-  // 从 chip 流里抽出当前 tag 列表
-  function currentTags() {
-    return Array.from(chipsEl.querySelectorAll('.chip'))
+  // ---------- 状态指示 ----------
+  const saveStateEl = document.getElementById('save-state');
+  let saveTimer = null;
+  let pendingAfterSave = null;        // callback after save returns
+  function setSaveState(s) {
+    saveStateEl.className = 'save-state save-state--' + s;
+    saveStateEl.textContent = ({
+      idle:    '● 已保存',
+      saving:  '○ 保存中…',
+      dirty:   '● 待保存',
+      error:   '⚠ 保存失败',
+    })[s] || '●';
+  }
+  setSaveState('idle');
+
+  // ---------- autosave: 通用 ----------
+  // type: 'tags' | 'shot_date' | 'notes'
+  function autosave(fields) {
+    if (saveTimer) clearTimeout(saveTimer);
+    setSaveState('saving');
+    const body = new URLSearchParams();
+    if ('tags' in fields) body.set('tags', fields.tags.join(', '));
+    if ('shot_date' in fields) body.set('shot_date', fields.shot_date || '');
+    if ('notes' in fields) body.set('notes', fields.notes || '');
+    return fetch(AUTOSAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    }).then(r => r.json()).then(j => {
+      setSaveState(j.ok ? 'idle' : 'error');
+      return j;
+    }).catch(() => {
+      setSaveState('error');
+      return { ok: false };
+    });
+  }
+
+  // ---------- char / other tag 统一管理 ----------
+  // 当前 polaroid 全 tag 列表 (含已加未同步的)
+  function readAllTags() {
+    return [
+      ...readStreamTags('char-chips'),
+      ...readStreamTags('other-chips'),
+    ];
+  }
+  function readStreamTags(streamId) {
+    return Array.from(document.getElementById(streamId).querySelectorAll('.chip'))
       .filter(c => !c.classList.contains('chip-add'))
-      .map(c => c.querySelector('.chip-body').textContent.trim())
-      .filter(t => t && !t.startsWith('+'));
+      .map(c => c.dataset.tag);
+  }
+  function saveTagsDebounced() {
+    // 这里用立即保存, tag 加/删不该 debounce, 每次 +/- 都 autosave
+    autosave({ tags: readAllTags() });
   }
 
-  function renderChips() {
-    hidden.value = currentTags().join(', ');
-  }
+  // 通用 chip streamer 管理器
+  function setupStream(streamId, addInputId, addBtnId, suggestId, quickSelector,
+                      prefix, allSuggestions, allowFreeform) {
+    const stream = document.getElementById(streamId);
+    const input = document.getElementById(addInputId);
+    const addBtn = document.getElementById(addBtnId);
+    const suggestEl = document.getElementById(suggestId);
+    const idPrefix = `${prefix}:`;
+    const freeformAllowed = !!allowFreeform;
 
-  // 删 chip
-  chipsEl.addEventListener('click', (e) => {
-    const btn = e.target.closest('.chip-x');
-    if (btn) {
-      const chip = btn.closest('.chip');
-      chip.remove();
-      renderChips();
+    // 计算候选 (限定 prefix 下的 tags)
+    const suggests = freeformAllowed
+      ? allSuggestions.slice()
+      : allSuggestions.filter(s => s.startsWith(idPrefix) || !s.includes(':'));
+
+    function currentInStream() {
+      return Array.from(stream.querySelectorAll('.chip'))
+        .filter(c => !c.classList.contains('chip-add'))
+        .map(c => c.dataset.tag);
     }
-  });
 
-  // 加 tag
-  function addTag(raw) {
-    raw = raw.trim();
-    if (!raw) return;
-    // 已存在则不重复加
-    const existing = currentTags();
-    if (existing.includes(raw)) return;
+    function addChip(raw) {
+      raw = (raw || '').trim();
+      if (!raw) return;
+      // 自动补 prefix (用户在 character panel 里输入 "my_push" 自动补 "char:my_push")
+      if (!freeformAllowed && !raw.includes(':')) {
+        raw = idPrefix + raw;
+      }
+      const existingTags = currentInStream();
+      if (existingTags.includes(raw)) return;
 
-    const parts = raw.split(':', 1);
-    const pfx = parts[0];
-    const val = raw.slice(pfx.length + 1);
+      const parts = raw.split(':', 1);
+      const pfx = parts[0];
+      const val = raw.slice(pfx.length + 1);
 
-    const span = document.createElement('span');
-    span.className = 'chip chip-' + pfx;
-    span.innerHTML =
-      '<a class="chip-body" href="/pool/' + pfx + '/' + encodeURIComponent(val) + '/edit?return_to=/bench/{{ p.id|urlencode }}">' + raw + '</a>' +
-      '<button type="button" class="chip-x" data-remove-tag="' + raw + '" title="移除">×</button>';
-    chipsEl.insertBefore(span, chipsEl.lastElementChild);
-    renderChips();
+      const span = document.createElement('span');
+      span.className = 'chip chip-' + pfx;
+      span.dataset.tag = raw;
+      span.innerHTML =
+        '<a class="chip-body" href="/pool/' + encodeURIComponent(pfx) + '/' +
+        encodeURIComponent(val) + '/edit?return_to=/bench/' + encodeURIComponent(PID) +
+        '">' + escapeHtml(raw) + '</a>' +
+        '<button type="button" class="chip-x" title="移除">×</button>';
+      stream.insertBefore(span, stream.lastElementChild);
+      saveTagsDebounced();
+    }
+
+    // X 删除
+    stream.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chip-x');
+      if (btn) {
+        btn.closest('.chip').remove();
+        saveTagsDebounced();
+      }
+    });
+
+    // 添加按钮
+    addBtn.addEventListener('click', () => {
+      addChip(input.value);
+      input.value = '';
+      suggestEl.hidden = true;
+      input.focus();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addBtn.click();
+      }
+    });
+
+    // 自动补全
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { suggestEl.hidden = true; suggestEl.innerHTML = ''; return; }
+      const allTags = readAllTags();
+      const matches = suggests
+        .filter(s => s.toLowerCase().includes(q) && !allTags.includes(s))
+        .slice(0, 8);
+      if (!matches.length) {
+        suggestEl.hidden = true; suggestEl.innerHTML = ''; return;
+      }
+      suggestEl.innerHTML = matches.map(m =>
+        '<button type="button" class="suggest-item" data-tag="' + escapeHtml(m) + '">' +
+        escapeHtml(m) + '</button>'
+      ).join('');
+      suggestEl.hidden = false;
+    });
+
+    suggestEl.addEventListener('click', (e) => {
+      const b = e.target.closest('.suggest-item');
+      if (b) {
+        addChip(b.dataset.tag);
+        input.value = '';
+        suggestEl.hidden = true;
+        input.focus();
+      }
+    });
+
+    // quick-add 按钮
+    stream.parentElement.querySelectorAll(quickSelector + ' [data-quick]').forEach(btn => {
+      btn.addEventListener('click', () => addChip(btn.dataset.quick));
+    });
   }
 
-  addBtn.addEventListener('click', () => {
-    const raw = input.value;
-    addTag(raw);
-    input.value = '';
-    suggestEl.hidden = true;
-    input.focus();
-  });
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addBtn.click();
-    }
-  });
-
-  // quick tags
-  document.querySelectorAll('.qt-chip').forEach(btn => {
-    btn.addEventListener('click', () => addTag(btn.dataset.quick));
-  });
-
-  // 自动补全 (从 polaroid 的所有 tag + 当前 char/event 池 + 已知 prefix 拼)
+  // ---------- 已用 suggestions ----------
   const allSuggestions = [
     {% for c in char_values %}'char:{{ c }}',{% endfor %}
     {% for c in event_values %}'event:{{ c }}',{% endfor %}
@@ -208,41 +369,114 @@
     {% for c in sig_values %}'sig:{{ c }}',{% endfor %}
   ].filter(Boolean);
 
-  function renderSuggest(query) {
-    query = query.trim().toLowerCase();
-    if (!query) {
-      suggestEl.hidden = true;
-      suggestEl.innerHTML = '';
-      return;
-    }
-    const matches = allSuggestions
-      .filter(s => s.toLowerCase().includes(query) && !currentTags().includes(s))
-      .slice(0, 8);
-    if (!matches.length) {
-      suggestEl.hidden = true;
-      suggestEl.innerHTML = '';
-      return;
-    }
-    suggestEl.innerHTML = matches.map(m =>
-      '<button type="button" class="suggest-item" data-tag="' + m + '">' + m + '</button>'
-    ).join('');
-    suggestEl.hidden = false;
-  }
+  // character panel: 自动补 prefix 'char:' (用户输入框只输入名字)
+  setupStream(
+    'char-chips', 'charInput', 'addCharBtn', 'charSuggest',
+    '#char-quick', 'char', allSuggestions, /* freeformAllowed */ false);
 
-  input.addEventListener('input', () => renderSuggest(input.value));
+  // other tag panel: 必须含 prefix, 否则不补, freeform
+  setupStream(
+    'other-chips', 'otherInput', 'addOtherBtn', 'otherSuggest',
+    '#other-quick', '', allSuggestions, /* freeformAllowed */ true);
 
-  suggestEl.addEventListener('click', (e) => {
-    const b = e.target.closest('.suggest-item');
-    if (b) {
-      addTag(b.dataset.tag);
-      input.value = '';
-      suggestEl.hidden = true;
-      input.focus();
-    }
+  // ---------- shot_date 防抖 + id 范围候选按钮 ----------
+  const shotInput = document.getElementById('shotDateInput');
+  let shotTimer = null;
+  shotInput.addEventListener('input', () => {
+    setSaveState('dirty');
+    if (shotTimer) clearTimeout(shotTimer);
+    shotTimer = setTimeout(() => {
+      autosave({ shot_date: shotInput.value.trim() });
+    }, 600);
   });
 
-  // 初次同步
-  renderChips();
+  // 候选日期按钮: 点击填入 input 并触发 input 事件 (走 autosave)
+  document.querySelectorAll('.drc-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      shotInput.value = btn.dataset.date;
+      shotInput.dispatchEvent(new Event('input'));
+      shotInput.focus();
+    });
+  });
+
+  // ---------- notes 防抖 ----------
+  const notesInput = document.getElementById('notesInput');
+  let notesTimer = null;
+  notesInput.addEventListener('input', () => {
+    setSaveState('dirty');
+    if (notesTimer) clearTimeout(notesTimer);
+    notesTimer = setTimeout(() => {
+      autosave({ notes: notesInput.value });
+    }, 600);
+  });
+
+  // ---------- 删除 ----------
+  document.getElementById('deleteBtn').addEventListener('click', async (e) => {
+    if (!confirm('删除 {{ p.id }}?')) { e.preventDefault(); return; }
+    const fd = new FormData();
+    await fetch('/bench/' + encodeURIComponent(PID) + '/delete', { method: 'POST', body: fd });
+    window.location.href = '/';
+  });
+
+  // ============================================================
+  // 顶部: 日期段快跳 (id 内嵌的日期段, 纯 JS 解析)
+  //   从 localStorage 读 list 页面缓存的全表 id;
+  //   找不到缓存 (用户从书签直接进 bench) 提示去 list 页面先逛一次.
+  // ============================================================
+  (function setupDateSegment() {
+    const el = document.getElementById('bench-date-seg');
+    const m = PID.match(/^(\d{4}-\d{2}-\d{2}(?:-\d{2})?)--/);
+    if (!m) {
+      el.innerHTML = '<small class="hint" style="margin-left:8px">id 不在路径日期段格式 (手命名)</small>';
+      return;
+    }
+    const seg = m[1];
+
+    let allPolars;
+    try {
+      const raw = localStorage.getItem(POLAR_KEY);
+      if (!raw) {
+        el.innerHTML = '<small class="hint" style="margin-left:8px">' +
+          '段内导航需先逛一次 <a href="/list">/list</a> 页面加载 polaroid 列表</small>';
+        return;
+      }
+      allPolars = JSON.parse(raw);
+    } catch (e) {
+      el.innerHTML = '<small class="hint" style="margin-left:8px">localStorage 不可用, 段内导航禁用</small>';
+      return;
+    }
+
+    const inSection = allPolars.filter(p => {
+      const mm = (p.id || '').match(/^(\d{4}-\d{2}-\d{2}(?:-\d{2})?)--/);
+      return mm && mm[1] === seg;
+    });
+
+    el.innerHTML = '<span class="ds-label">本段:</span>' +
+      '<span class="ds-seg">' + escapeHtml(seg) + '</span>' +
+      '<span class="ds-count">(' + inSection.length + ' 张)</span>' +
+      (inSection.length > 1
+        ? '<a class="ds-link" id="ds-prev" href="#">← 该段第一张</a>' +
+          '<a class="ds-link" id="ds-next" href="#">该段最后一张 →</a>'
+        : '');
+
+    const curIdx = inSection.findIndex(p => p.id === PID);
+    if (curIdx > 0) {
+      document.getElementById('ds-prev').href = '/bench/' + encodeURIComponent(inSection[0].id);
+    } else {
+      const p = document.getElementById('ds-prev'); if (p) p.remove();
+    }
+    if (curIdx >= 0 && curIdx < inSection.length - 1) {
+      document.getElementById('ds-next').href = '/bench/' + encodeURIComponent(inSection[inSection.length - 1].id);
+    } else {
+      const p = document.getElementById('ds-next'); if (p) p.remove();
+    }
+  })();
+
+  // ---------- helpers ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
 })();
 </script>
 

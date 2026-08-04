@@ -20,7 +20,12 @@
       </div>
       <div class="card__meta">
         <code>{{ p.id }}</code>
-        <small>{{ p.shot_date or '—' }}</small>
+        {# shot_date 优先; 空时显示 id 解析的推荐 (带 (id) 标记, 用户一眼看出是派生的) #}
+        <small>
+          {%- if p.shot_date -%}{{ p.shot_date }}
+          {%- elif p.id | shot_date_hint -%}{{ p.id | shot_date_hint }} <span class="hint">(id)</span>
+          {%- else -%}—{%- endif -%}
+        </small>
         <div class="tags">
           {% for t in p.tags[:8] %}
             {% set parts = t.split(':', 1) %}
@@ -34,4 +39,20 @@
   {% endfor %}
 </div>
 {% endif %}
+
+{# 全表 id 缓存到 localStorage, 供 bench 页面做"段内导航" (#←该段第一张 / 该段最后一张→#) 使用.
+   bench 页面只发当前 polaroid, 不发全表 — 这是 list 路由的活, 不是 bench 路由的活.
+   polaroid 是 dataclass, 不能直接 |tojson, 在这里 inline 拼 id+shot_date JSON. #}
+<script>
+(function() {
+  const POLARS = [
+    {%- for p in polaroids -%}
+      {"id": {{ p.id|tojson }}, "shot_date": {{ (p.shot_date or '')|tojson }}}{% if not loop.last %},{% endif %}
+    {%- endfor -%}
+  ];
+  try {
+    localStorage.setItem('polarscan:polaroids:v1', JSON.stringify(POLARS));
+  } catch (e) { /* private mode / quota — bench 页面会自己提示 */ }
+})();
+</script>
 {% endblock %}

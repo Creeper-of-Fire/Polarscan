@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -19,9 +20,10 @@ from polarscan.core.index import Asset, Polaroid
 
 
 # ============================================================
-# 配置
+# 配置: data_dir (派生: 索引 + 缩略图, 跟代码同盘 SSD)
+#         原 PNG 的绝对路径存在 _index.yaml 里, 运行时不需要 LIBRARY_ROOT
 # ============================================================
-LIBRARY_ROOT = Path(r"F:\相册\偶活\拍立得扫描\偶活拍立得扫描").resolve()
+DATA_DIR = Path(__file__).resolve().parent.parent.parent  # = D:\Dev\Workspace\Polarscan
 WEB_DIR = Path(__file__).parent
 TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
@@ -30,10 +32,56 @@ STATIC_DIR = WEB_DIR / "static"
 # ============================================================
 # 单例
 # ============================================================
-ps = Polarscan(LIBRARY_ROOT)
+ps = Polarscan(DATA_DIR)
 app = FastAPI(title="Polarscan")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+# ============================================================
+# Jinja filters (纯函数, 不写 yaml, 不调 API — 只在渲染时做字符串派生)
+# ============================================================
+import re as _re
+from datetime import date as _date, timedelta as _td
+
+def _id_date_range(pid: str) -> list[str]:
+    """从 polaroid id 解析出拍摄日期范围, 展开为 [YYYY-MM-DD, ...] 列表.
+
+    - '2026-07-25-26--img...'  → ['2026-07-25', '2026-07-26']
+    - '2026-05-01-04--img...'  → ['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04']
+    - '2026-07-25--img...'      → ['2026-07-25']
+    - 'dandan_xxx' (手命名)    → []
+    """
+    if not pid:
+        return []
+    m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})(?:-(\d{2}))?--', pid)
+    if not m:
+        return []
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    end_day = int(m.group(4)) if m.group(4) else d
+    if end_day < d:
+        # 跨月范围 (e.g. '2026-01-31-02-01') — 不展开, 留给手填
+        return []
+    try:
+        start = _date(y, mo, d)
+    except ValueError:
+        return []
+    out = []
+    cur = start
+    for _ in range(end_day - d + 1):
+        out.append(cur.isoformat())
+        cur = cur + _td(days=1)
+    return out
+
+
+def _shot_date_hint(pid: str) -> str:
+    """单日推荐值 (范围取首日). 给 list 卡片 fallback 用."""
+    rng = _id_date_range(pid)
+    return rng[0] if rng else ''
+
+
+templates.env.filters['id_date_range'] = _id_date_range
+templates.env.filters['shot_date_hint'] = _shot_date_hint
 
 
 def reload_ps() -> None:
@@ -68,6 +116,10 @@ def list_view(request: Request, tag: Optional[str] = None):
 
 
 def _bench_ctx(request: Request, p: Polaroid, focus_tag: str | None = None):
+    # bench ctx 只发当前 polaroid + 全表 nav (prev/next/next_untagged).
+    # 段内导航 (本段: 2026-07-25-26 / 该段第一张/最后一张) 是前端的事:
+    #   list 页面把全表 id 缓存到 localStorage, bench 页面从 localStorage 读.
+    # 后端不做"按 id-prefix 分日期段"的活; shot_date 字段是用户手填的, 不做派生.
     polaroids = ps.polaroids()
     idx = ps.polaroid_index_of(p.id)
     return {
@@ -99,6 +151,41 @@ def bench(request: Request, pid: str, focus: Optional[str] = None):
     return templates.TemplateResponse(request, "bench.html", _bench_ctx(request, p, focus_tag=focus))
 
 
+@app.post("/bench/{pid}/autosave")
+async def bench_autosave(
+    pid: str,
+    shot_date: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+):
+    """JSON 端点: 改了什么传什么, 没传的不动.
+
+    用于 JS autosave (tag chip 增减 + shot_date / notes 的 input 防抖).
+    返回 {ok: True, tags_count: ..., shot_date: ..., notes_len: ...} 用于状态展示.
+    """
+    from fastapi.responses import JSONResponse
+
+    p = ps.polaroid(pid)
+    if p is None:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+
+    if tags is not None:
+        p.tags = [t.strip() for t in tags.split(",") if t.strip()]
+    if shot_date is not None:
+        p.shot_date = shot_date.strip() or None
+    if notes is not None:
+        p.notes = notes
+
+    ps.upsert_polaroid(p)
+    ps.save()
+    return JSONResponse({
+        "ok": True,
+        "tags": p.tags,
+        "shot_date": p.shot_date,
+        "notes_len": len(p.notes),
+    })
+
+
 @app.post("/bench/{pid}")
 async def bench_save(
     pid: str,
@@ -107,6 +194,8 @@ async def bench_save(
     tags: str = Form(""),
     focus: Optional[str] = Form(None),
 ):
+    """保留 'submit 整个表单' 路径. 默认 autosave 已接管, 此 endpoint 主要供
+    HTML form 回退 (无 JS 时)."""
     p = ps.polaroid(pid)
     if p is None:
         raise HTTPException(404, "not found")
@@ -217,11 +306,12 @@ async def new_create(
 @app.get("/pool/{prefix}", response_class=HTMLResponse)
 def pool_index(request: Request, prefix: str):
     items = ps.all_tags_in_pool(prefix)
-    # 附: 哪些 polaroid 带某个 tag
+    # 附: 哪些 polaroid 带某个 tag; 按使用频率降序, 同频次按 key 字母升序
     enriched = []
-    for k, meta in sorted(items.items()):
+    for k, meta in items.items():
         count = len(ps.polaroids_with_tag(prefix, k))
         enriched.append({"key": k, "meta": meta, "count": count})
+    enriched.sort(key=lambda x: (-x["count"], x["key"]))
     return templates.TemplateResponse(
         request,
         "pool_index.html",
@@ -301,20 +391,44 @@ def thumb(pid: str):
     p = ps.polaroid(pid)
     if p is None:
         raise HTTPException(404, "not found")
-    tp = ps.thumb_path_for(p)
+    tp = ps.thumb_path_for(p, asset_idx=0)
     if tp is None or not tp.exists():
         raise HTTPException(404, "no thumb (asset missing or unreadable)")
     return FileResponse(tp)
 
 
-@app.get("/img/{pid}")
-def img(pid: str):
+@app.get("/thumb/{pid}/{asset_idx:int}")
+def thumb_idx(pid: str, asset_idx: int):
     p = ps.polaroid(pid)
     if p is None:
         raise HTTPException(404, "not found")
-    src = ps.first_asset_path(p)
-    if src is None or not src.exists():
+    tp = ps.thumb_path_for(p, asset_idx=asset_idx)
+    if tp is None or not tp.exists():
+        raise HTTPException(404, "no thumb")
+    return FileResponse(tp)
+
+
+@app.get("/img/{pid}")
+def img(pid: str):
+    """原图: 用户在 bench 页面主动点 '查看原图' 才触发, 直接读 F 盘."""
+    p = ps.polaroid(pid)
+    if p is None or not p.assets:
         raise HTTPException(404, "no asset")
+    return _serve_asset(p.assets[0].path)
+
+
+@app.get("/img/{pid}/{asset_idx:int}")
+def img_idx(pid: str, asset_idx: int):
+    p = ps.polaroid(pid)
+    if p is None or not p.assets or asset_idx < 0 or asset_idx >= len(p.assets):
+        raise HTTPException(404, "no asset")
+    return _serve_asset(p.assets[asset_idx].path)
+
+
+def _serve_asset(asset_path: str):
+    src = Path(asset_path)
+    if not src.exists():
+        raise HTTPException(404, "asset missing on F drive")
     return FileResponse(src)
 
 

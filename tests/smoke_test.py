@@ -3,12 +3,12 @@ import shutil
 from pathlib import Path
 from fastapi.testclient import TestClient
 import apps.web.server as srv
-from apps.web.server import app, LIBRARY_ROOT
+from apps.web.server import app, DATA_DIR
 
-# backup _index.yaml
-LIB = Path(LIBRARY_ROOT)
-INDEX_FILE = LIB / "_index.yaml"
-BAK_FILE = LIB / "_index.yaml.bak"
+# backup _index.yaml (in DATA_DIR = D:\Dev\Workspace\Polarscan\)
+DATA = Path(DATA_DIR)
+INDEX_FILE = DATA / "_index.yaml"
+BAK_FILE = DATA / "_index.yaml.bak"
 shutil.copy(INDEX_FILE, BAK_FILE)
 
 try:
@@ -98,7 +98,7 @@ finally:
     if BAK_FILE.exists():
         shutil.move(BAK_FILE, INDEX_FILE)
         print("(restored _index.yaml from backup)")
-    # delete test thumb
-    t = LIB / ".thumbs" / "dandan_2025_10_18_111.jpg"
+    # delete test thumb (in DATA_DIR)
+    t = DATA / ".thumbs" / "dandan_2025_10_18_111.jpg"
     if t.exists():
         t.unlink()
