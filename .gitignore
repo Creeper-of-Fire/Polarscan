@@ -18,3 +18,12 @@ _index.yaml.tmp
 
 # Polarscan 根目录的一次性脚本不纳入 Git；不影响包内的 __init__.py
 /_*.py
+
+# Node / pnpm / Vite
+node_modules/
+**/node_modules/
+frontend/dist/
+frontend/.vite/
+pnpm-debug.log*
+.pnpm-install.log
+.uvicorn.log

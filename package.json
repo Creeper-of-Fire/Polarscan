@@ -1,0 +1,16 @@
+{
+  "name": "polarscan-workspace",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n vite,fastapi -c cyan,magenta \"pnpm --filter frontend dev\" \"python -m apps.web.server\"",
+    "build": "pnpm --filter frontend build",
+    "preview": "pnpm --filter frontend preview"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "vue-demi"]
+  }
+}
