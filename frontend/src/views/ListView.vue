@@ -36,7 +36,8 @@ async function loadWithTag() {
   }
   loading.value = true
   try {
-    store.summaries = await polaroidsApi.byTag(tag)
+    const list = await polaroidsApi.byTag(tag)
+    store.$patch({ summaries: list })
   } finally {
     loading.value = false
   }

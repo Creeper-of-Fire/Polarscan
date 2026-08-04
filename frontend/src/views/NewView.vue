@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NSpin, NForm, NFormItem, NInput, NButton, NSpace, NAlert, NTag, useMessage,
+  NForm, NFormItem, NInput, NButton, NSpace, NAlert, NTag, useMessage,
 } from 'naive-ui'
 import { newApi, polaroidsApi } from '@/api'
 import { useDropzone } from '@/composables/useDropzone'
@@ -21,7 +21,19 @@ const error = ref('')
 const charOptions = ref<string[]>([])
 const submitting = ref(false)
 
+// 解构 dropzone 的 ref/computed 到顶层, 让 template 类型推断正确
 const dz = useDropzone({ withThumb: true })
+const files = dz.files
+const status = dz.status
+const errorMsg = dz.errorMsg
+const importable = dz.importable
+const hashHits = dz.hashHits
+const handleDrop = dz.handleDrop
+const removeFile = dz.removeFile
+const reset = dz.reset
+const fileStatus = dz.fileStatus
+const fileStatusLabel = dz.fileStatusLabel
+const firstCandidatePath = dz.firstCandidatePath
 
 // 日期段建议（来自 dropzone 候选路径）
 const dateSuggestion = computed(() => {
@@ -34,8 +46,8 @@ const dateSuggestion = computed(() => {
     }
     return null
   }
-  const importablePaths = dz.importable.value.map((i) => ({ path: i.path }))
-  return tryFromFiles(importablePaths) || tryFromFiles(dz.files.value.flatMap((f) => (f.identify.candidates || []).slice(0, 1)))
+  const importablePaths = importable.value.map((i) => ({ path: i.path }))
+  return tryFromFiles(importablePaths) || tryFromFiles(files.value.flatMap((f) => (f.identify.candidates || []).slice(0, 1)))
 })
 
 function applyDate(d: string) {
@@ -53,31 +65,28 @@ function suggestId() {
 }
 
 // 自动填表单（dropzone 处理完调）
-watch(
-  () => dz.status.value,
-  (s) => {
-    if (s !== 'ready') return
-    const paths = dz.importable.value.map((i) => i.path)
-    if (paths.length === 0) return
-    const existing = assetPathsText.value.split('\n').map((s) => s.trim()).filter(Boolean)
-    const merged = [...new Set([...existing, ...paths])]
-    assetPathsText.value = merged.join('\n')
-    if (!shotDate.value.trim()) {
-      for (const p of paths) {
-        const dn = parentDirName(p)
-        if (!dn) continue
-        const r = parseFolderDateRange(dn)
-        if (r) {
-          shotDate.value = r.start
-          suggestId()
-          break
-        }
+watch(status, (s) => {
+  if (s !== 'ready') return
+  const paths = importable.value.map((i) => i.path)
+  if (paths.length === 0) return
+  const existing = assetPathsText.value.split('\n').map((s) => s.trim()).filter(Boolean)
+  const merged = [...new Set([...existing, ...paths])]
+  assetPathsText.value = merged.join('\n')
+  if (!shotDate.value.trim()) {
+    for (const p of paths) {
+      const dn = parentDirName(p)
+      if (!dn) continue
+      const r = parseFolderDateRange(dn)
+      if (r) {
+        shotDate.value = r.start
+        suggestId()
+        break
       }
-    } else {
-      suggestId()
     }
-  },
-)
+  } else {
+    suggestId()
+  }
+})
 
 onMounted(async () => {
   try {
@@ -126,36 +135,36 @@ async function submit() {
 
     <!-- Dropzone -->
     <section style="border: 2px dashed #ccc; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #fafafa">
-      <div @dragover.prevent @drop.prevent="dz.handleDrop">
-        <p v-if="dz.status === 'idle'">拖入文件到这里创建新拍立得（也可使用下方手动表单）</p>
-        <p v-else-if="dz.status === 'hashing'">算 hash 中…</p>
-        <p v-else-if="dz.status === 'identifying'">identify 中…</p>
-        <p v-else-if="dz.status === 'submitting'">提交中…</p>
-        <p v-else-if="dz.status === 'error'" style="color: #c00">{{ dz.errorMsg }}</p>
+      <div @dragover.prevent @drop.prevent="handleDrop">
+        <p v-if="status === 'idle'">拖入文件到这里创建新拍立得（也可使用下方手动表单）</p>
+        <p v-else-if="status === 'hashing'">算 hash 中…</p>
+        <p v-else-if="status === 'identifying'">identify 中…</p>
+        <p v-else-if="status === 'submitting'">提交中…</p>
+        <p v-else-if="status === 'error'" style="color: #c00">{{ errorMsg }}</p>
       </div>
 
-      <div v-if="dz.status === 'ready' || dz.status === 'error'" style="margin-top: 12px">
-        <div v-for="(f, i) in dz.files" :key="f.name + f.mtime"
+      <div v-if="status === 'ready' || status === 'error'" style="margin-top: 12px">
+        <div v-for="(f, i) in files" :key="f.name + f.mtime"
              style="display: flex; gap: 12px; align-items: center; padding: 8px; border-bottom: 1px solid #eee">
           <img v-if="f.thumb" :src="f.thumb" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px" />
           <div style="flex: 1; min-width: 0">
             <code style="font-size: 12px">{{ f.name }}</code>
             <div style="font-size: 12px; color: #666">
-              {{ dz.fileStatusLabel(f) }}
-              <template v-if="dz.fileStatus(f) === 'hash-hit'">
+              {{ fileStatusLabel(f) }}
+              <template v-if="fileStatus(f) === 'hash-hit'">
                 · 已在 polaroid <code>{{ f.identify.by_hash[0].pid }}</code>
                 第 {{ f.identify.by_hash[0].asset_idx + 1 }} 张
               </template>
-              <template v-else-if="dz.fileStatus(f) === 'candidate-in-yaml'">
-                · F:盘路径 <code>{{ dz.firstCandidatePath(f) }}</code>
+              <template v-else-if="fileStatus(f) === 'candidate-in-yaml'">
+                · F:盘路径 <code>{{ firstCandidatePath(f) }}</code>
                 已导入到 <code>{{ f.identify.candidates[0]?.in_yaml_pid }}</code>
               </template>
-              <template v-else-if="dz.fileStatus(f) === 'new'">
-                · 将新建，路径 <code>{{ dz.firstCandidatePath(f) }}</code>
+              <template v-else-if="fileStatus(f) === 'new'">
+                · 将新建，路径 <code>{{ firstCandidatePath(f) }}</code>
               </template>
             </div>
           </div>
-          <NButton size="small" @click="dz.removeFile(i)">×</NButton>
+          <NButton size="small" @click="removeFile(i)">×</NButton>
         </div>
 
         <div v-if="dateSuggestion" style="margin-top: 12px; padding: 8px; background: #fff8dc; border-radius: 4px">
@@ -172,9 +181,9 @@ async function submit() {
         </div>
 
         <div style="margin-top: 12px; color: #666; font-size: 12px">
-          已自动填入下方表单（{{ dz.importable.length }} 个）。
-          hash 命中 {{ dz.hashHits.length }} 个已跳过。
-          <NButton size="small" @click="dz.reset()">清空</NButton>
+          已自动填入下方表单（{{ importable.length }} 个）。
+          hash 命中 {{ hashHits.length }} 个已跳过。
+          <NButton size="small" @click="reset()">清空</NButton>
         </div>
       </div>
     </section>

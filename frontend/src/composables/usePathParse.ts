@@ -24,11 +24,12 @@ export function parseFolderDateRange(name: string): { start: string; end: string
   const startDay = parseInt(m[3], 10)
   const startIso = toIso(year, startMonth, startDay)
   if (!startIso) return null
-  let endIso = startIso
+  let endIso: string = startIso
   if (m[4]) {
     const endDay = parseInt(m[4], 10)
-    endIso = toIso(year, startMonth, endDay)
-    if (!endIso) return null
+    const e = toIso(year, startMonth, endDay)
+    if (!e) return null
+    endIso = e
   } else if (m[5]) {
     // 跨月范围不解析
     return null

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NSpin, NTag, NInput, NButton, NSpace, NCard, NDivider, NEmpty, useMessage, useDialog,
+  NSpin, NTag, NInput, NButton, NSpace, NCard, NEmpty, useMessage, useDialog,
 } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi, tagsApi } from '@/api'
@@ -22,7 +22,39 @@ const loading = ref(false)
 const shotDateInput = ref('')
 const notesInput = ref('')
 const showAssetModal = ref(false)
-const savingTag = ref(false)
+
+// ---------- dropzone (追加) ----------
+const dz = useDropzone({ withThumb: false })
+const { files: dzFiles, status: dzStatus, errorMsg: dzErrorMsg, importable: dzImportable,
+  handleDrop: dzHandleDrop, removeFile: dzRemoveFile, reset: dzReset,
+  fileStatus: dzFileStatus, fileStatusLabel: dzFileStatusLabel } = dz
+
+// ---------- 标签候选 ----------
+const allSuggestions = ref<string[]>([])
+async function loadSuggestions() {
+  try {
+    const grouped = await tagsApi.all()
+    allSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
+  } catch {
+    allSuggestions.value = []
+  }
+}
+
+// ---------- char / other tag streams ----------
+const charStream = useChipStream({
+  autoPrefix: 'char',
+  allowFreeform: false,
+  suggestions: () => allSuggestions.value,
+})
+const otherStream = useChipStream({
+  autoPrefix: '',
+  allowFreeform: true,
+  suggestions: () => allSuggestions.value,
+})
+const { modelValue: charTags, query: charQuery, showSuggest: charShow, suggestItems: charItems,
+  addChip: charAdd, removeChip: charRemove, onInput: charOnInput, pickSuggest: charPick } = charStream
+const { modelValue: otherTags, query: otherQuery, showSuggest: otherShow, suggestItems: otherItems,
+  addChip: otherAdd, removeChip: otherRemove, onInput: otherOnInput, pickSuggest: otherPick } = otherStream
 
 // ---------- 数据加载 ----------
 onMounted(async () => {
@@ -56,6 +88,21 @@ function syncFromStore() {
   notesInput.value = store.current.notes || ''
 }
 
+// 把 store.current.tags 拆成 char 和 other
+function splitTags() {
+  if (!store.current) return
+  const cs: string[] = []
+  const os: string[] = []
+  for (const t of store.current.tags) {
+    if (t.startsWith('char:') || !t.includes(':')) cs.push(t)
+    else os.push(t)
+  }
+  charStream.setTags(cs)
+  otherStream.setTags(os)
+}
+
+watch(() => store.current?.id, splitTags, { immediate: true })
+
 // ---------- 顶部导航 ----------
 const prevId = computed(() => store.prevId)
 const nextId = computed(() => store.nextId)
@@ -76,57 +123,8 @@ async function goto(direction: 'prev' | 'next' | 'untagged') {
 // 日期段
 const dateRange = computed(() => idDateRange(props.pid))
 
-// ---------- 标签候选 ----------
-// 从 /api/all-tags 拉全表，已用 tags 也算候选
-const allSuggestions = ref<string[]>([])
-
-async function loadSuggestions() {
-  try {
-    const grouped = await tagsApi.all()
-    allSuggestions.value = ([] as string[]).concat(
-      ...Object.values(grouped),
-    )
-  } catch {
-    allSuggestions.value = []
-  }
-}
-
-// char 流（自动补 char: 前缀，不允许自由格式）
-const charStream = useChipStream({
-  autoPrefix: 'char',
-  allowFreeform: false,
-  suggestions: () => allSuggestions.value,
-})
-
-// other 流（自由格式）
-const otherStream = useChipStream({
-  autoPrefix: '',
-  allowFreeform: true,
-  suggestions: () => allSuggestions.value,
-})
-
-// 把 store.current.tags 拆成 char 和 other
-function splitTags() {
-  if (!store.current) return
-  const charTags = store.current.tags.filter(
-    (t) => t.startsWith('char:') || !t.includes(':'),
-  )
-  const otherTags = store.current.tags.filter(
-    (t) => !(t.startsWith('char:') || !t.includes(':')),
-  )
-  charStream.setTags(charTags)
-  otherStream.setTags(otherTags)
-}
-
-// 监听 store.current 变化，更新两个流
-watch(
-  () => store.current?.id,
-  () => splitTags(),
-  { immediate: true },
-)
-
 // ---------- Autosave ----------
-const { state: saveState, schedule, flush, save } = useAutosave(
+const { state: saveState, flush, save } = useAutosave(
   async (payload: { tags?: string[]; shot_date?: string; notes?: string }) => {
     return polaroidsApi.autosave(props.pid, payload)
   },
@@ -135,14 +133,9 @@ const { state: saveState, schedule, flush, save } = useAutosave(
 
 // tags 增减 → 立即保存
 function onTagsChanged() {
-  const all = [
-    ...charStream.modelValue,
-    ...otherStream.modelValue,
-  ]
+  const all: string[] = [...charTags.value, ...otherTags.value]
   if (store.current) store.current.tags = all
-  // 立即保存（不走防抖）
-  savingTag.value = true
-  save({ tags: all }).finally(() => (savingTag.value = false))
+  save({ tags: all })
 }
 
 // shot_date 防抖保存
@@ -168,7 +161,6 @@ function onNotesInput() {
 function applyDate(d: string) {
   shotDateInput.value = d
   onShotInput()
-  shotDateInput.value = d // 重新设，因为 flush 异步
 }
 
 // 删除 polaroid
@@ -192,40 +184,33 @@ function confirmDelete() {
   })
 }
 
-// ---------- Dropzone（追加） ----------
-const dz = useDropzone({ withThumb: false })
-
+// ---------- dropzone 追加 ----------
 async function confirmAppend() {
-  const paths = dz.importable.value.map((i) => i.path)
+  const paths = dzImportable.value.map((i) => i.path)
   if (paths.length === 0) {
-    dz.errorMsg.value = '没有可追加的文件'
-    dz.status.value = 'error'
+    dzErrorMsg.value = '没有可追加的文件'
+    dzStatus.value = 'error'
     return
   }
   try {
     await polaroidsApi.appendFiles(props.pid, paths)
     message.success('已追加')
     await store.loadPolaroid(props.pid)
-    dz.reset()
+    dzReset()
   } catch (e) {
-    dz.errorMsg.value = e instanceof Error ? e.message : String(e)
-    dz.status.value = 'error'
+    dzErrorMsg.value = e instanceof Error ? e.message : String(e)
+    dzStatus.value = 'error'
   }
 }
 
-// ---------- 资产 modal 保存后 ----------
 async function onAssetsSaved() {
   await store.loadPolaroid(props.pid)
 }
 
-// char 候选 + quick
-const charValues = computed(() => {
-  // 从 allSuggestions 提取 char:xxx
-  return allSuggestions.value
-    .filter((s) => s.startsWith('char:'))
-    .map((s) => s.slice(5))
-})
-
+// ---------- 候选 + quick ----------
+const charValues = computed(() =>
+  allSuggestions.value.filter((s) => s.startsWith('char:')).map((s) => s.slice(5)),
+)
 const shotValues = computed(() =>
   allSuggestions.value.filter((s) => s.startsWith('shot:')).map((s) => s.slice(5)),
 )
@@ -235,26 +220,18 @@ const sigValues = computed(() =>
 
 const saveStateLabel = computed(() => {
   switch (saveState.value) {
-    case 'idle':
-      return '● 已保存'
-    case 'saving':
-      return '○ 保存中…'
-    case 'dirty':
-      return '● 待保存'
-    case 'error':
-      return '⚠ 保存失败'
+    case 'idle': return '● 已保存'
+    case 'saving': return '○ 保存中…'
+    case 'dirty': return '● 待保存'
+    case 'error': return '⚠ 保存失败'
   }
 })
 const saveStateColor = computed(() => {
   switch (saveState.value) {
-    case 'idle':
-      return '#52c41a'
-    case 'saving':
-      return '#1890ff'
-    case 'dirty':
-      return '#faad14'
-    case 'error':
-      return '#f5222d'
+    case 'idle': return '#52c41a'
+    case 'saving': return '#1890ff'
+    case 'dirty': return '#faad14'
+    case 'error': return '#f5222d'
   }
 })
 </script>
@@ -282,24 +259,24 @@ const saveStateColor = computed(() => {
 
       <!-- Dropzone（追加） -->
       <section style="border: 2px dashed #ccc; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fafafa">
-        <div @dragover.prevent @drop.prevent="dz.handleDrop">
-          <p v-if="dz.status === 'idle'">拖入文件追加到这张拍立得</p>
-          <p v-else-if="dz.status === 'hashing'">算 hash 中…</p>
-          <p v-else-if="dz.status === 'identifying'">identify 中…</p>
-          <p v-else-if="dz.status === 'submitting'">提交中…</p>
-          <p v-else-if="dz.status === 'error'" style="color: #c00">{{ dz.errorMsg }}</p>
+        <div @dragover.prevent @drop.prevent="dzHandleDrop">
+          <p v-if="dzStatus === 'idle'">拖入文件追加到这张拍立得</p>
+          <p v-else-if="dzStatus === 'hashing'">算 hash 中…</p>
+          <p v-else-if="dzStatus === 'identifying'">identify 中…</p>
+          <p v-else-if="dzStatus === 'submitting'">提交中…</p>
+          <p v-else-if="dzStatus === 'error'" style="color: #c00">{{ dzErrorMsg }}</p>
         </div>
 
-        <div v-if="dz.status === 'ready' || dz.status === 'error'" style="margin-top: 8px">
-          <div v-for="(f, i) in dz.files" :key="f.name + f.mtime"
+        <div v-if="dzStatus === 'ready' || dzStatus === 'error'" style="margin-top: 8px">
+          <div v-for="(f, i) in dzFiles" :key="f.name + f.mtime"
                style="display: flex; gap: 8px; padding: 4px; border-bottom: 1px solid #eee; align-items: center">
             <code style="flex: 1; font-size: 12px">{{ f.name }}</code>
-            <span style="font-size: 12px; color: #666">{{ dz.fileStatusLabel(f) }}</span>
-            <NButton size="small" @click="dz.removeFile(i)">×</NButton>
+            <span style="font-size: 12px; color: #666">{{ dzFileStatusLabel(f) }}</span>
+            <NButton size="small" @click="dzRemoveFile(i)">×</NButton>
           </div>
-          <NSpace style="margin-top: 8px" v-if="dz.importable.length > 0">
+          <NSpace style="margin-top: 8px" v-if="dzImportable.length > 0">
             <NButton type="primary" @click="confirmAppend">确认追加</NButton>
-            <NButton @click="dz.reset()">清空</NButton>
+            <NButton @click="dzReset()">清空</NButton>
           </NSpace>
         </div>
       </section>
@@ -341,27 +318,28 @@ const saveStateColor = computed(() => {
           <!-- 角色面板 -->
           <NCard title="角色（char）" style="margin-top: 16px">
             <div>
-              <NTag v-for="tag in charStream.modelValue" :key="tag"
-                    closable @close="charStream.removeChip(tag); onTagsChanged()"
+              <NTag v-for="tag in charTags" :key="tag"
+                    closable @close="charRemove(tag); onTagsChanged()"
                     style="margin: 2px">
                 {{ tag }}
               </NTag>
             </div>
             <NSpace style="margin-top: 8px">
-              <NInput v-model:value="charStream.query" placeholder="角色标识（例：my_push）"
-                      @input="charStream.onInput" @keyup.enter="charStream.addChip(charStream.query); onTagsChanged()" />
-              <NButton @click="charStream.addChip(charStream.query); onTagsChanged()">+ 角色</NButton>
+              <NInput :value="charQuery" placeholder="角色标识（例：my_push）"
+                      @input="(v: string) => { charQuery = v; charOnInput() }"
+                      @keyup.enter="charAdd(charQuery); onTagsChanged()" />
+              <NButton @click="charAdd(charQuery); onTagsChanged()">+ 角色</NButton>
             </NSpace>
-            <div v-if="charStream.showSuggest" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
-              <NButton v-for="s in charStream.suggestItems" :key="s" size="small" text
-                       @click="charStream.pickSuggest(s); onTagsChanged()">
+            <div v-if="charShow" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
+              <NButton v-for="s in charItems" :key="s" size="small" text
+                       @click="charPick(s); onTagsChanged()">
                 {{ s }}
               </NButton>
             </div>
             <div v-if="charValues.length > 0" style="margin-top: 8px">
               <span style="color: #666; font-size: 12px">角色池：</span>
               <NButton v-for="c in charValues.slice(0, 18)" :key="c" size="small" text
-                       @click="charStream.addChip(`char:${c}`); onTagsChanged()">
+                       @click="charAdd(`char:${c}`); onTagsChanged()">
                 + {{ c }}
               </NButton>
             </div>
@@ -373,33 +351,34 @@ const saveStateColor = computed(() => {
           <!-- 其他标签面板 -->
           <NCard title="其他标签（tag）" style="margin-top: 12px">
             <div>
-              <NTag v-for="tag in otherStream.modelValue" :key="tag"
-                    closable @close="otherStream.removeChip(tag); onTagsChanged()"
+              <NTag v-for="tag in otherTags" :key="tag"
+                    closable @close="otherRemove(tag); onTagsChanged()"
                     :type="tag.startsWith('shot:') ? 'success' : tag.startsWith('sig:') ? 'warning' : 'default'"
                     style="margin: 2px">
                 {{ tag }}
               </NTag>
             </div>
             <NSpace style="margin-top: 8px">
-              <NInput v-model:value="otherStream.query" placeholder="其他标签（例：event:shenshan_3rd_om_cd、shot:pair）"
-                      @input="otherStream.onInput" @keyup.enter="otherStream.addChip(otherStream.query); onTagsChanged()" />
-              <NButton @click="otherStream.addChip(otherStream.query); onTagsChanged()">+ 标签</NButton>
+              <NInput :value="otherQuery" placeholder="其他标签（例：event:shenshan_3rd_om_cd、shot:pair）"
+                      @input="(v: string) => { otherQuery = v; otherOnInput() }"
+                      @keyup.enter="otherAdd(otherQuery); onTagsChanged()" />
+              <NButton @click="otherAdd(otherQuery); onTagsChanged()">+ 标签</NButton>
             </NSpace>
-            <div v-if="otherStream.showSuggest" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
-              <NButton v-for="s in otherStream.suggestItems" :key="s" size="small" text
-                       @click="otherStream.pickSuggest(s); onTagsChanged()">
+            <div v-if="otherShow" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
+              <NButton v-for="s in otherItems" :key="s" size="small" text
+                       @click="otherPick(s); onTagsChanged()">
                 {{ s }}
               </NButton>
             </div>
             <div v-if="shotValues.length > 0 || sigValues.length > 0" style="margin-top: 8px">
               <span v-if="shotValues.length > 0" style="color: #666; font-size: 12px">shot:</span>
               <NButton v-for="c in shotValues.slice(0, 5)" :key="c" size="small" text
-                       @click="otherStream.addChip(`shot:${c}`); onTagsChanged()">
+                       @click="otherAdd(`shot:${c}`); onTagsChanged()">
                 + {{ c }}
               </NButton>
               <span v-if="sigValues.length > 0" style="color: #666; font-size: 12px; margin-left: 8px">sig:</span>
               <NButton v-for="c in sigValues.slice(0, 5)" :key="c" size="small" text
-                       @click="otherStream.addChip(`sig:${c}`); onTagsChanged()">
+                       @click="otherAdd(`sig:${c}`); onTagsChanged()">
                 + {{ c }}
               </NButton>
             </div>
