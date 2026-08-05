@@ -5,7 +5,7 @@
     usePolarscanStore (Pinia 全局) → summaries / 跳转 ID
     usePolaroidEditor (page-local composable) → polaroid + save actions
     useDropzone (page-local) → 追加文件 → editor.appendFiles
-    useChipStream × 2 → char / other tag streams → editor.saveMeta
+    PolaroidTagsEditor → 统一 char + other 标签编辑 (与 NewView 共享)
     PolaroidImagePreview → 纯展示
 -->
 <script setup lang="ts">
@@ -18,10 +18,10 @@ import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi, tagsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
-import { useChipStream } from '@/composables/useChipStream'
 import { idDateRange } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 import AssetListEditor from '@/components/AssetListEditor.vue'
+import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
 import type { DroppedFile } from '@/types'
 
 const props = defineProps<{ pid: string }>()
@@ -42,7 +42,6 @@ onMounted(async () => {
   ])
   store.currentId = props.pid
   await loadSuggestions()
-  syncChipsFromPolaroid()
 })
 
 // 同组件路由切换(/bench/A → /bench/B):用 lifecycle hook 替代 watcher
@@ -51,7 +50,6 @@ onBeforeRouteUpdate(async (to) => {
   store.currentId = newPid
   await editor.load(newPid)
   await loadSuggestions()
-  syncChipsFromPolaroid()
 })
 
 // ---------- 标签候选 ----------
@@ -72,34 +70,6 @@ const { files: dzFiles, status: dzStatus, errorMsg: dzErrorMsg,
   getHits: dzGetHits,
   handleDrop: dzHandleDrop, removeFile: dzRemoveFile, reset: dzReset,
   fileStatusLabel: dzFileStatusLabel } = dz
-
-// ---------- char / other tag streams ----------
-const charStream = useChipStream({
-  autoPrefix: 'char',
-  allowFreeform: false,
-  suggestions: () => allSuggestions.value,
-})
-const otherStream = useChipStream({
-  autoPrefix: '',
-  allowFreeform: true,
-  suggestions: () => allSuggestions.value,
-})
-const { modelValue: charTags, query: charQuery, showSuggest: charShow, suggestItems: charItems,
-  addChip: charAdd, removeChip: charRemove, onInput: charOnInput, pickSuggest: charPick } = charStream
-const { modelValue: otherTags, query: otherQuery, showSuggest: otherShow, suggestItems: otherItems,
-  addChip: otherAdd, removeChip: otherRemove, onInput: otherOnInput, pickSuggest: otherPick } = otherStream
-
-// 把 polaroid.tags 拆成 char 和 other
-function syncChipsFromPolaroid() {
-  const cs: string[] = []
-  const os: string[] = []
-  for (const t of polaroid.value.tags) {
-    if (t.startsWith('char:') || !t.includes(':')) cs.push(t)
-    else os.push(t)
-  }
-  charStream.setTags(cs)
-  otherStream.setTags(os)
-}
 
 // ---------- 顶部导航 ----------
 const prevId = computed(() => store.prevId)
@@ -145,8 +115,7 @@ async function doSave() {
 }
 
 function onTagsChanged() {
-  const all: string[] = [...charTags.value, ...otherTags.value]
-  polaroid.value.tags = all
+  // PolaroidTagsEditor v-model 已写入 polaroid.tags; 这里只触发 debounced save
   scheduleSave()
 }
 
@@ -275,15 +244,7 @@ async function confirmAppend() {
 }
 
 // ---------- 候选 + quick ----------
-const charValues = computed(() =>
-  allSuggestions.value.filter((s) => s.startsWith('char:')).map((s) => s.slice(5)),
-)
-const shotValues = computed(() =>
-  allSuggestions.value.filter((s) => s.startsWith('shot:')).map((s) => s.slice(5)),
-)
-const sigValues = computed(() =>
-  allSuggestions.value.filter((s) => s.startsWith('sig:')).map((s) => s.slice(4)),
-)
+// (角色池 / shot 池 / sig 池 全部由 PolaroidTagsEditor 内部处理, 这里不再派生)
 
 // 保存状态指示
 const saveState = computed(() => {
@@ -391,74 +352,17 @@ const saveStateColor = computed(() => {
           <h2 style="margin-top: 0"><code>{{ polaroid.id }}</code></h2>
           <small style="color: #666">id 是稳定标识；修改 shot_date 或 char 不会改变它。</small>
 
-          <!-- 角色面板 -->
-          <NCard title="角色（char）" style="margin-top: 16px">
-            <div>
-              <NTag v-for="tag in charTags" :key="tag"
-                    closable @close="charRemove(tag); onTagsChanged()"
-                    style="margin: 2px">
-                {{ tag }}
-              </NTag>
-            </div>
-            <NSpace style="margin-top: 8px">
-              <NInput :value="charQuery" placeholder="角色标识（例：my_push）"
-                      @input="(v: string) => { charQuery = v; charOnInput() }"
-                      @keyup.enter="charAdd(charQuery); onTagsChanged()" />
-              <NButton @click="charAdd(charQuery); onTagsChanged()">+ 角色</NButton>
-            </NSpace>
-            <div v-if="charShow" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
-              <NButton v-for="s in charItems" :key="s" size="small" text
-                       @click="charPick(s); onTagsChanged()">
-                {{ s }}
-              </NButton>
-            </div>
-            <div v-if="charValues.length > 0" style="margin-top: 8px">
-              <span style="color: #666; font-size: 12px">角色池：</span>
-              <NButton v-for="c in charValues.slice(0, 18)" :key="c" size="small" text
-                       @click="charAdd(`char:${c}`); onTagsChanged()">
-                + {{ c }}
-              </NButton>
-            </div>
-            <div style="margin-top: 8px">
-              <RouterLink :to="`/pool/char`">→ 查看角色池并编辑规范名称与别名</RouterLink>
-            </div>
-          </NCard>
-
-          <!-- 其他标签面板 -->
-          <NCard title="其他标签（tag）" style="margin-top: 12px">
-            <div>
-              <NTag v-for="tag in otherTags" :key="tag"
-                    closable @close="otherRemove(tag); onTagsChanged()"
-                    :type="tag.startsWith('shot:') ? 'success' : tag.startsWith('sig:') ? 'warning' : 'default'"
-                    style="margin: 2px">
-                {{ tag }}
-              </NTag>
-            </div>
-            <NSpace style="margin-top: 8px">
-              <NInput :value="otherQuery" placeholder="其他标签（例：event:shenshan_3rd_om_cd、shot:pair）"
-                      @input="(v: string) => { otherQuery = v; otherOnInput() }"
-                      @keyup.enter="otherAdd(otherQuery); onTagsChanged()" />
-              <NButton @click="otherAdd(otherQuery); onTagsChanged()">+ 标签</NButton>
-            </NSpace>
-            <div v-if="otherShow" style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px">
-              <NButton v-for="s in otherItems" :key="s" size="small" text
-                       @click="otherPick(s); onTagsChanged()">
-                {{ s }}
-              </NButton>
-            </div>
-            <div v-if="shotValues.length > 0 || sigValues.length > 0" style="margin-top: 8px">
-              <span v-if="shotValues.length > 0" style="color: #666; font-size: 12px">shot:</span>
-              <NButton v-for="c in shotValues.slice(0, 5)" :key="c" size="small" text
-                       @click="otherAdd(`shot:${c}`); onTagsChanged()">
-                + {{ c }}
-              </NButton>
-              <span v-if="sigValues.length > 0" style="color: #666; font-size: 12px; margin-left: 8px">sig:</span>
-              <NButton v-for="c in sigValues.slice(0, 5)" :key="c" size="small" text
-                       @click="otherAdd(`sig:${c}`); onTagsChanged()">
-                + {{ c }}
-              </NButton>
-            </div>
-          </NCard>
+          <!-- 角色 + 其他标签 (统一组件, 与 NewView 共享) -->
+          <div style="margin-top: 16px">
+            <PolaroidTagsEditor
+              v-model="polaroid.tags"
+              :suggestions="allSuggestions"
+              @update:model-value="onTagsChanged"
+            />
+          </div>
+          <div style="margin-top: 8px">
+            <RouterLink :to="`/pool/char`">→ 查看角色池并编辑规范名称与别名</RouterLink>
+          </div>
 
           <!-- 拍摄日期 -->
           <NCard title="拍摄日期（shot_date）" style="margin-top: 12px">

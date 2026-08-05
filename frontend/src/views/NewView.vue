@@ -2,35 +2,54 @@
   NewView: 新建拍立得
 
   数据流:
-    usePolaroidEditor()    → 极简空 polaroid (id='', assets=[]) + create action
+    usePolaroidEditor()    → 极简空 polaroid (id='', assets=[]) + save action
     useDropzone            → 拖入文件 → handleDropReady 追加到 polaroid.assets
     AssetListEditor        → v-model 绑 polaroid.assets, 提供 role/captured_at/device 编辑
-    PolaroidImagePreview   → 预览 (assets 空 → empty state; id 空但 assets 有 → "资产已填入, 点创建后预览")
+    PolaroidImagePreview   → 预览 (by-path, 不依赖 polaroid 是否索引)
+    PolaroidTagsEditor     → 统一角色 + 其他标签 (与 BenchView 共享; 归并后 char 加得上去)
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NForm, NFormItem, NInput, NButton, NSpace, NTag, useMessage,
+  NForm, NFormItem, NInput, NButton, NSpace, useMessage,
 } from 'naive-ui'
-import { polaroidsApi } from '@/api'
+import { tagsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
 import { parentDirName, parseFolderDateRange } from '@/composables/usePathParse'
 import type { Asset, DroppedFile } from '@/types'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
+import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
 
 const router = useRouter()
 const message = useMessage()
 
-// 编辑 session (create 模式; pid 由 create() 推到 /bench/{newPid})
+// 编辑 session (create 模式; pid 由 save() 推到 /bench/{newPid})
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 const submitting = ref(false)
 
-// 派生字段 (不在 polaroid 上的本地 form state)
-const primaryChar = ref('')
+// ---------- 标签候选 (给 PolaroidTagsEditor) ----------
+const allSuggestions = ref<string[]>([])
+;(async () => {
+  try {
+    const grouped = await tagsApi.all()
+    allSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
+  } catch {
+    allSuggestions.value = []
+  }
+})()
+
+// 派生 id 用: 取 polaroid.tags 里第一个 char tag 的 char 名
+const primaryCharForId = computed<string | null>(() => {
+  for (const t of polaroid.value.tags) {
+    if (t.startsWith('char:')) return t.slice(5)
+    if (!t.includes(':')) return t
+  }
+  return null
+})
 
 // ---------- dropzone ----------
 const dz = useDropzone({
@@ -94,7 +113,7 @@ async function suggestId() {
   try {
     const pid = await editor.suggestId(
       polaroid.value.shot_date ?? null,
-      primaryChar.value.trim() || null,
+      primaryCharForId.value,
     )
     polaroid.value.id = pid
   } catch {
@@ -107,15 +126,16 @@ function onShotDateInput(v: string) {
   suggestId()
 }
 
-function onTagsInput(v: string) {
-  polaroid.value!.tags = v.split(',').map((s) => s.trim()).filter(Boolean)
+// PolaroidTagsEditor v-model 已写入 polaroid.tags; 这里只触发 id 派生
+function onTagsChanged() {
+  suggestId()
 }
 
 function onNotesInput(v: string) {
   polaroid.value!.notes = v
 }
 
-// 清空按钮: dropzone 状态 + 已填入 polaroid.assets 一并清
+// 清空按钮: dropzone 状态 + 已填入 polaroid 全部字段一并清
 function resetAll() {
   reset()                          // dropzone
   polaroid.value.assets = []        // editor 同步
@@ -149,24 +169,6 @@ async function submit() {
     submitting.value = false
   }
 }
-
-// ---------- 角色候选 (从已有 polaroids 拉) ----------
-const charOptions = ref<string[]>([])
-;(async () => {
-  try {
-    const list = await polaroidsApi.byTag('char')
-    // 从 polaroid id 提取 char (id 形如 2026-XX-XX_charname_hash; charname 现在允许中文等 Unicode)
-    const chars = new Set<string>()
-    for (const p of list) {
-      // \w + u flag 匹配 Unicode word 字符；过滤占位符 nochar/nostamp
-      const m = p.id.match(/_(\w+)_[a-f0-9]{6}$/u)
-      if (m && m[1] !== 'nochar' && m[1] !== 'nostamp') chars.add(m[1])
-    }
-    charOptions.value = [...chars]
-  } catch {
-    charOptions.value = []
-  }
-})()
 </script>
 
 <template>
@@ -226,27 +228,25 @@ const charOptions = ref<string[]>([])
           />
           <NButton size="small" @click="suggestId">自动派生</NButton>
         </div>
-        <small style="color: #666">默认根据拍摄日期与首个角色自动派生，可手动覆盖；id 写入 YAML 后即冻结</small>
+        <small style="color: #666">
+          默认根据拍摄日期与首个 char tag 自动派生，可手动覆盖；id 写入 YAML 后即冻结
+        </small>
       </NFormItem>
 
       <NFormItem label="拍摄日期（shot_date）">
         <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
       </NFormItem>
 
-      <NFormItem label="首个角色（用于派生 id）">
-        <NInput v-model:value="primaryChar" placeholder="strawberry / my_push / ..." @input="suggestId" />
-        <div v-if="charOptions.length > 0" style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap">
-          <NTag v-for="c in charOptions" :key="c" size="small" checkable
-                :checked="primaryChar === c"
-                @update:checked="(v: boolean) => v && (primaryChar = c)">
-            {{ c }}
-          </NTag>
-        </div>
-      </NFormItem>
-
-      <NFormItem label="其他标签（tags，逗号分隔）">
-        <NInput :value="polaroid.tags.join(', ')" placeholder="例: shot:pair, event:shenshan_3rd_om_cd"
-                @input="(v: string) => onTagsInput(v)" />
+      <!-- 角色 + 其他标签 (统一组件, 与 BenchView 共享) -->
+      <NFormItem label="标签 (tags)">
+        <PolaroidTagsEditor
+          v-model="polaroid.tags"
+          :suggestions="allSuggestions"
+          @update:model-value="onTagsChanged"
+        />
+        <small style="color: #666">
+          改 char tag 也会重新派生 id；首个 char 作为派生用主角色
+        </small>
       </NFormItem>
 
       <NFormItem label="备注（notes）">
