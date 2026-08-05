@@ -38,4 +38,20 @@ html, body, #app {
 * {
   box-sizing: border-box;
 }
+
+/* Dropzone 视觉约定 (两个 view 共用: BenchView 追加 / NewView 新建)
+ * 整个 section 监听 dragenter/over/leave/drop, 高亮覆盖整块区域; 用户视觉上一致。
+ * useDropzone 内置 counter 处理 dragenter/dragleave 在子元素间穿梭的嵌套事件。 */
+.dropzone-section {
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: #fafafa;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.dropzone-section.is-dragging {
+  border-color: #18a058;
+  background: #f0f9eb;
+}
 </style>

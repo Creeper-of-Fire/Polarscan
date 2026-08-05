@@ -86,6 +86,42 @@ export function useDropzone(options: DropzoneOptions = {}) {
   const status = ref<DropzoneStatus>('idle')
   const errorMsg = ref<string>('')
 
+  // 拖拽高亮: 用 counter 处理 dragenter/dragleave 在子元素间穿梭时的嵌套事件,
+  // 用 dataTransfer.types 过滤掉非文件拖拽 (e.g. 文本选中 drag).
+  const isDragging = ref(false)
+  let dragCounter = 0
+
+  function isFileDrag(e: DragEvent): boolean {
+    return !!e.dataTransfer && Array.from(e.dataTransfer.types ?? []).includes('Files')
+  }
+
+  function onDragEnter(e: DragEvent) {
+    e.preventDefault()
+    if (!isFileDrag(e)) return
+    dragCounter++
+    if (dragCounter === 1) isDragging.value = true
+  }
+
+  function onDragOver(e: DragEvent) {
+    e.preventDefault()
+    if (e.dataTransfer && isFileDrag(e)) e.dataTransfer.dropEffect = 'copy'
+  }
+
+  function onDragLeave(e: DragEvent) {
+    e.preventDefault()
+    if (!isFileDrag(e)) return
+    dragCounter--
+    if (dragCounter <= 0) {
+      dragCounter = 0
+      isDragging.value = false
+    }
+  }
+
+  function resetDrag() {
+    dragCounter = 0
+    isDragging.value = false
+  }
+
   /**
    * create 流用: 没 hash 命中, 且有 F: 盘候选路径
    * (创建新拍立得时, 只要不在 hash 库里 + F: 盘存在, 就可作为资产)
@@ -134,6 +170,7 @@ export function useDropzone(options: DropzoneOptions = {}) {
 
   async function handleDrop(event: DragEvent): Promise<void> {
     event.preventDefault()
+    resetDrag()
     const dt = event.dataTransfer
     if (!dt || !dt.files || dt.files.length === 0) return
 
@@ -267,12 +304,16 @@ export function useDropzone(options: DropzoneOptions = {}) {
     files,
     status,
     errorMsg,
+    isDragging,
     importable,
     hitFiles,
     appendEligible,
     noFPathFiles,
     getHits,
     handleDrop,
+    onDragEnter,
+    onDragOver,
+    onDragLeave,
     removeFile,
     reset,
     fileStatus,

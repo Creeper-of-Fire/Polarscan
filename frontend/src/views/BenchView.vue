@@ -66,9 +66,12 @@ async function loadSuggestions() {
 // ---------- dropzone (追加) ----------
 const dz = useDropzone({ withThumb: false })
 const { files: dzFiles, status: dzStatus, errorMsg: dzErrorMsg,
+  isDragging: dzIsDragging,
   appendEligible: dzAppendEligible, hitFiles: dzHitFiles, noFPathFiles: dzNoFPathFiles,
   getHits: dzGetHits,
-  handleDrop: dzHandleDrop, removeFile: dzRemoveFile, reset: dzReset,
+  handleDrop: dzHandleDrop,
+  onDragEnter: dzOnDragEnter, onDragOver: dzOnDragOver, onDragLeave: dzOnDragLeave,
+  removeFile: dzRemoveFile, reset: dzReset,
   fileStatusLabel: dzFileStatusLabel } = dz
 
 // ---------- 顶部导航 ----------
@@ -290,15 +293,20 @@ const saveStateColor = computed(() => {
       </div>
 
       <!-- Dropzone（追加） -->
-      <section style="border: 2px dashed #ccc; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fafafa">
-        <div @dragover.prevent @drop.prevent="dzHandleDrop">
-          <p v-if="dzStatus === 'idle'">拖入文件追加到这张拍立得</p>
-          <p v-else-if="dzStatus === 'candidates-checking'">candidates 检查中…</p>
-          <p v-else-if="dzStatus === 'hashing'">算 hash 中…</p>
-          <p v-else-if="dzStatus === 'identifying'">identify 中…</p>
-          <p v-else-if="dzStatus === 'submitting'">提交中…</p>
-          <p v-else-if="dzStatus === 'error'" style="color: #c00">{{ dzErrorMsg }}</p>
-        </div>
+      <section
+        class="dropzone-section"
+        :class="{ 'is-dragging': dzIsDragging }"
+        @dragenter="dzOnDragEnter"
+        @dragover="dzOnDragOver"
+        @dragleave="dzOnDragLeave"
+        @drop="dzHandleDrop"
+      >
+        <p v-if="dzStatus === 'idle'">拖入文件追加到这张拍立得</p>
+        <p v-else-if="dzStatus === 'candidates-checking'">candidates 检查中…</p>
+        <p v-else-if="dzStatus === 'hashing'">算 hash 中…</p>
+        <p v-else-if="dzStatus === 'identifying'">identify 中…</p>
+        <p v-else-if="dzStatus === 'submitting'">提交中…</p>
+        <p v-else-if="dzStatus === 'error'" style="color: #c00">{{ dzErrorMsg }}</p>
 
         <div v-if="dzStatus === 'ready' || dzStatus === 'error'" style="margin-top: 8px">
           <div v-for="(f, i) in dzFiles" :key="f.name + f.mtime"

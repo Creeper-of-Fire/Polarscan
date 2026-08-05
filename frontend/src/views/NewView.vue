@@ -12,7 +12,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NForm, NFormItem, NInput, NButton, NSpace, useMessage,
+  NCard, NForm, NFormItem, NInput, NButton, NSpace, useMessage,
 } from 'naive-ui'
 import { tagsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
@@ -59,7 +59,9 @@ const dz = useDropzone({
   withThumb: true,
   onReady: handleDropReady,
 })
-const { files, status, errorMsg, importable, handleDrop,
+const { files, status, errorMsg, isDragging,
+  importable, handleDrop,
+  onDragEnter, onDragOver, onDragLeave,
   removeFile, reset, fileStatusLabel } = dz
 
 // dropzone 完成: 把 importable 文件追加到 polaroid.assets
@@ -176,95 +178,104 @@ async function submit() {
   <div>
     <h2 style="margin-top: 0">新建拍立得</h2>
 
-    <!-- Dropzone -->
-    <section style="border: 2px dashed #ccc; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #fafafa">
-      <div @dragover.prevent @drop.prevent="handleDrop">
-        <p v-if="status === 'idle'">拖入文件到这里创建新拍立得（也可使用下方手动表单）</p>
-        <p v-else-if="status === 'candidates-checking'">candidates 检查中…</p>
-        <p v-else-if="status === 'hashing'">算 hash 中…</p>
-        <p v-else-if="status === 'identifying'">identify 中…</p>
-        <p v-else-if="status === 'submitting'">提交中…</p>
-        <p v-else-if="status === 'error'" style="color: #c00">{{ errorMsg }}</p>
-      </div>
+    <!-- 左右两列: 左 = dropzone + 资产 + 预览; 右 = 元数据表单 -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px">
+      <!-- 左: 资产侧 -->
+      <div>
+        <!-- Dropzone (整个 section 是 drop target, 拖拽时整块变色) -->
+        <section
+          class="dropzone-section"
+          :class="{ 'is-dragging': isDragging }"
+          @dragenter="onDragEnter"
+          @dragover="onDragOver"
+          @dragleave="onDragLeave"
+          @drop="handleDrop"
+        >
+          <p v-if="status === 'idle'">拖入文件到这里创建新拍立得</p>
+          <p v-else-if="status === 'candidates-checking'">candidates 检查中…</p>
+          <p v-else-if="status === 'hashing'">算 hash 中…</p>
+          <p v-else-if="status === 'identifying'">identify 中…</p>
+          <p v-else-if="status === 'submitting'">提交中…</p>
+          <p v-else-if="status === 'error'" style="color: #c00">{{ errorMsg }}</p>
 
-      <div v-if="status === 'ready' || status === 'error'" style="margin-top: 12px">
-        <div v-for="(f, i) in files" :key="f.name + f.mtime"
-             style="display: flex; gap: 12px; align-items: center; padding: 8px; border-bottom: 1px solid #eee">
-          <img v-if="f.thumb" :src="f.thumb" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px" />
-          <div style="flex: 1; min-width: 0">
-            <code style="font-size: 12px">{{ f.name }}</code>
-            <div style="font-size: 12px; color: 666">
-              {{ fileStatusLabel(f) }}
+          <div v-if="status === 'ready' || status === 'error'" style="margin-top: 12px">
+            <div v-for="(f, i) in files" :key="f.name + f.mtime"
+                 style="display: flex; gap: 12px; align-items: center; padding: 8px; border-bottom: 1px solid #eee">
+              <img v-if="f.thumb" :src="f.thumb" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px" />
+              <div style="flex: 1; min-width: 0">
+                <code style="font-size: 12px">{{ f.name }}</code>
+                <div style="font-size: 12px; color: 666">
+                  {{ fileStatusLabel(f) }}
+                </div>
+              </div>
+              <NButton size="small" @click="removeFile(i)">×</NButton>
+            </div>
+            <div style="margin-top: 12px; color: #666; font-size: 12px">
+              已添加 {{ importable.length }} 个文件到下方表单。
+              <NButton size="small" @click="resetAll()">清空全部</NButton>
             </div>
           </div>
-          <NButton size="small" @click="removeFile(i)">×</NButton>
-        </div>
-        <div style="margin-top: 12px; color: #666; font-size: 12px">
-          已添加 {{ importable.length }} 个文件到下方表单。
-          <NButton size="small" @click="resetAll()">清空全部</NButton>
-        </div>
+        </section>
+
+        <!-- 预览 -->
+        <NCard title="预览" style="margin-bottom: 16px">
+          <PolaroidImagePreview :polaroid="polaroid" :show-captions="true" />
+        </NCard>
+
+        <!-- 资产编辑 -->
+        <NCard title="资产 (assets)">
+          <AssetListEditor v-model="polaroid.assets" />
+        </NCard>
       </div>
-    </section>
 
-    <!-- 资产表单 (AssetListEditor) -->
-    <NCard title="资产 (assets)" style="margin-bottom: 16px" content-style="padding: 16px">
-      <AssetListEditor
-        v-model="polaroid.assets"
-      />
-    </NCard>
+      <!-- 右: 元数据 -->
+      <NForm label-placement="top">
+        <NFormItem label="标识（id）">
+          <div style="display: flex; gap: 8px; align-items: center; width: 100%">
+            <NInput
+              v-model:value="polaroid.id"
+              placeholder="留空点右侧“自动派生”或手动输入（允许中文）"
+              style="flex: 1"
+            />
+            <NButton size="small" @click="suggestId">自动派生</NButton>
+          </div>
+          <small style="color: #666">
+            默认根据拍摄日期与首个 char tag 自动派生，可手动覆盖；id 写入 YAML 后即冻结
+          </small>
+        </NFormItem>
 
-    <!-- 预览 -->
-    <div style="margin-bottom: 16px">
-      <PolaroidImagePreview :polaroid="polaroid" :show-captions="true" />
-    </div>
+        <NFormItem label="拍摄日期（shot_date）">
+          <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
+          <div v-if="assetDates.length > 0" style="margin-top: 8px">
+            <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
+            <NButton v-for="d in assetDates" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
+              {{ d }}
+            </NButton>
+          </div>
+        </NFormItem>
 
-    <!-- 元数据表单 -->
-    <NForm label-placement="top" style="max-width: 720px">
-      <NFormItem label="标识（id）">
-        <div style="display: flex; gap: 8px; align-items: center; width: 100%">
-          <NInput
-            v-model:value="polaroid.id"
-            placeholder="留空点右侧“自动派生”或手动输入（允许中文）"
-            style="flex: 1"
+        <!-- 角色 + 其他标签 (统一组件, 与 BenchView 共享) -->
+        <NFormItem label="标签 (tags)">
+          <PolaroidTagsEditor
+            v-model="polaroid.tags"
+            :suggestions="allSuggestions"
+            @update:model-value="onTagsChanged"
           />
-          <NButton size="small" @click="suggestId">自动派生</NButton>
-        </div>
-        <small style="color: #666">
-          默认根据拍摄日期与首个 char tag 自动派生，可手动覆盖；id 写入 YAML 后即冻结
-        </small>
-      </NFormItem>
+          <small style="color: #666">
+            改 char tag 也会重新派生 id；首个 char 作为派生用主角色
+          </small>
+        </NFormItem>
 
-      <NFormItem label="拍摄日期（shot_date）">
-        <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
-        <div v-if="assetDates.length > 0" style="margin-top: 8px">
-          <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
-          <NButton v-for="d in assetDates" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
-            {{ d }}
-          </NButton>
-        </div>
-      </NFormItem>
+        <NFormItem label="备注（notes）">
+          <NInput :value="polaroid.notes" type="textarea" :rows="4"
+                  @input="(v: string) => onNotesInput(v)" />
+        </NFormItem>
 
-      <!-- 角色 + 其他标签 (统一组件, 与 BenchView 共享) -->
-      <NFormItem label="标签 (tags)">
-        <PolaroidTagsEditor
-          v-model="polaroid.tags"
-          :suggestions="allSuggestions"
-          @update:model-value="onTagsChanged"
-        />
-        <small style="color: #666">
-          改 char tag 也会重新派生 id；首个 char 作为派生用主角色
-        </small>
-      </NFormItem>
-
-      <NFormItem label="备注（notes）">
-        <NInput :value="polaroid.notes" type="textarea" :rows="4"
-                @input="(v: string) => onNotesInput(v)" />
-      </NFormItem>
-
-      <NSpace>
-        <NButton type="primary" :loading="submitting" @click="submit">创建</NButton>
-        <NButton @click="router.push('/list')">取消</NButton>
-      </NSpace>
-    </NForm>
+        <NSpace style="margin-top: 12px">
+          <NButton type="primary" :loading="submitting" @click="submit">创建</NButton>
+          <NButton @click="router.push('/list')">取消</NButton>
+        </NSpace>
+      </NForm>
+    </div>
   </div>
 </template>
