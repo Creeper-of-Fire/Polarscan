@@ -64,20 +64,27 @@ polarscan/
     storage.py           # _index.yaml 读写
     asset_thumb.py       # 资产哈希与缩略图生成
     id_gen.py            # 拍立得 id 派生
-  api.py                 # 公开 Python 接口，应用层必须经由这里访问
+  api.py                 # 公开 Python 接口,应用层必须经由这里访问
 
 apps/
   web/                   # FastAPI 本地网页界面
     server.py            # 路由 + SPA 静态挂载 + catch-all
-    static/              # 仅保留 path-parse.js (测试仍引用)
     library_resolver.py  # drop 工作流 F:盘路径识别
 
 frontend/                # Vue SPA (pnpm 子包)
   src/
     views/               # ListView / NewView / BenchView / PoolIndexView / PoolEditView
-    components/          # AppShell / AssetModal
+    components/
+      AppShell.vue       # 顶部导航 / reload
+      PolaroidImagePreview.vue  # 多图 album 视图(feature)
+      SingleImagePreview.vue    # 单图 thumb/origin/lightbox(widget)
     stores/              # Pinia: polarscan (全表缓存 + 当前选中)
-    composables/         # useAutosave / useDropzone / useChipStream / usePathParse
+    composables/
+      useAutosave.ts
+      useDropzone.ts
+      useChipStream.ts
+      usePathParse.ts
+      usePolaroidEditor.ts  # Pinia ↔ page 适配层(编辑 session)
     api/                 # fetch 封装 + 按域分组的端点
     router/              # Vue Router 表
   vite.config.ts         # proxy /api /thumb /img /pool 等到 :8765
@@ -85,6 +92,19 @@ frontend/                # Vue SPA (pnpm 子包)
 
 tests/                   # 隔离运行的核心与端到端测试
 ```
+
+### 前端组件分层
+
+- **widget** (SingleImagePreview): 纯展示,接收 `thumbUrl` / `originUrl` URL 字符串。
+  不耦合 polaroid / asset 语义,可独立复用。
+- **feature** (PolaroidImagePreview): 接收完整 `polaroid`,album 风格展示
+  全部 assets(大封面 + 缩略图条切换)。空 polaroid 走空状态。
+- **composable** (usePolaroidEditor): 编辑 session 的 Pinia ↔ page 适配层,
+  拉数据 / 调 API / 同步状态;page 通过 `polaroid` ref 直接 v-model 编辑。
+- **page** (BenchView / NewView / ListView): 纯 form UI,不直接碰 API / Pinia。
+
+AssetModal 已删除——编辑 asset 元数据(role / captured_at / device)由通用
+表单编辑器承担,后续迭代。
 
 ## JSON API（Vue SPA 使用）
 
@@ -144,3 +164,9 @@ GET 路由 `/`、`/list`、`/new`、`/bench/{pid}`、`/pool/{prefix}`、`/pool/{
 - 新增：`frontend/`（Vue SPA + Vite 构建）、`apps/web/server.py` 改造（保留所有 POST，新增 JSON API，挂载 SPA catch-all）
 - CDN 全部去除：Alpine.js、hash-wasm、blake2b 全部由 pnpm 安装
 - localStorage 跨页通信 → Pinia store + 后端 JSON API
+
+2026-08 第二轮：组件层级 + 编辑 session 适配层
+
+- 新增：`SingleImagePreview` (widget) / `PolaroidImagePreview` (feature) / `usePolaroidEditor` (composable)
+- 删除：`AssetModal` (资产元数据编辑由通用表单编辑器承担,后续迭代) / `apps/web/static/path-parse.js` (已迁到 `usePathParse.ts`) / `tests/test_path_parse.js`
+- 改造：`BenchView` / `NewView` / `ListView` 全部走新组件;`server.py` 移除 `/static` 挂载

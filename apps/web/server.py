@@ -36,7 +36,6 @@ logger = logging.getLogger("polarscan.web")
 # ============================================================
 DATA_DIR = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = Path(__file__).parent
-STATIC_DIR = WEB_DIR / "static"
 SPA_DIR = WEB_DIR.parent.parent / "frontend" / "dist"
 VITE_DEV_URL = "http://127.0.0.1:5173"
 
@@ -69,8 +68,6 @@ VITE_AVAILABLE = _detect_vite()
 # ============================================================
 ps = Polarscan(DATA_DIR)
 app = FastAPI(title="Polarscan")
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 if SPA_DIR.exists() and not VITE_AVAILABLE:
     # Vite dev 模式下不挂载 dist/assets，避免冲突；dev 时由 catch-all 代理
     app.mount("/assets", StaticFiles(directory=str(SPA_DIR / "assets")), name="spa-assets")
@@ -81,7 +78,17 @@ def reload_ps() -> None:
 
 
 def _polaroid_summary(p) -> dict:
-    return {"id": p.id, "shot_date": p.shot_date}
+    """list / 池浏览用的轻量 summary.
+
+    含 cover_asset = assets[0] (或 None) - 给 ListView 的卡片显示缩略图用,
+    后端拼 URL 模板是组件的事, 这里只给业务对象 (id + cover_asset.hash).
+    """
+    cover = p.assets[0] if p.assets else None
+    return {
+        "id": p.id,
+        "shot_date": p.shot_date,
+        "cover_asset": asdict(cover) if cover is not None else None,
+    }
 
 
 def _polaroid_to_dict(p) -> dict:
@@ -386,7 +393,16 @@ async def api_drop_identify(request: Request):
             path_str = str(cand.path)
             in_yaml_hits = ps.find_by_path(path_str)
             in_yaml_pid = in_yaml_hits[0][0] if in_yaml_hits else None
-            candidates.append({"path": path_str, "in_yaml_pid": in_yaml_pid})
+            candidates.append({
+                "path": path_str,
+                "in_yaml_pid": in_yaml_pid,
+                # 完整命中位置列表 (pid + asset_idx) - 用于前端 force-add dialog
+                # in_yaml_pid 保留为兼容字段 (例如老版测试 / 第三方脚本)
+                "in_yaml_hits": [
+                    {"pid": hit_pid, "asset_idx": hit_idx}
+                    for hit_pid, hit_idx in in_yaml_hits
+                ],
+            })
 
     return {"by_hash": by_hash, "candidates": candidates}
 

@@ -4,6 +4,8 @@ export interface Asset {
   path: string
   captured_at?: string | null
   device?: string | null
+  /** 128 位十六进制 blake2b；首次写入前为空 (旧资产未迁移)。后端用 asdict 直出。 */
+  hash?: string | null
 }
 
 export interface Polaroid {
@@ -17,6 +19,10 @@ export interface Polaroid {
 export interface PolaroidSummary {
   id: string
   shot_date: string | null
+  /** 首张资产 (用于列表卡片显示);拍立得无资产时为 null。
+   *  含 hash 字段, 给 SingleImagePreview 做 ?v= cache-bust 用, 不暴露给业务。
+   */
+  cover_asset?: Asset | null
 }
 
 export interface PoolItem {
@@ -30,15 +36,31 @@ export interface TagSuggestion {
   values: string[]
 }
 
+export interface IdentifyHit {
+  pid: string
+  asset_idx: number
+  /** 命中来源: 'hash' = Blake2b 字节相同; 'path' = F: 盘绝对路径已在 yaml 中 */
+  via: 'hash' | 'path'
+}
+
+export interface IdentifyCandidate {
+  path: string
+  /** 兼容字段: 第一个 in_yaml 命中的 pid (旧版用). 新代码优先用 in_yaml_hits */
+  in_yaml_pid: string | null
+  /** 完整路径命中位置 (pid + asset_idx); 与 by_hash 走同样的"是否命中"判断 */
+  in_yaml_hits: Array<{ pid: string; asset_idx: number }>
+}
+
 export interface IdentifyResult {
   by_hash: Array<{ pid: string; asset_idx: number }>
-  candidates: Array<{ path: string; in_yaml_pid: string | null }>
+  candidates: IdentifyCandidate[]
 }
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'error'
 
 export type DropzoneStatus =
   | 'idle'
+  | 'candidates-checking'
   | 'hashing'
   | 'identifying'
   | 'ready'

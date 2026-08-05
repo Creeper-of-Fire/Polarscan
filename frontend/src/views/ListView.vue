@@ -1,10 +1,17 @@
+<!--
+  ListView: 浏览全部拍立得
+
+  每张卡片用 SingleImagePreview 显示 cover, 点击进入 BenchView。
+  URL 拼装由 SingleImagePreview 内部处理, ListView 只传业务对象。
+-->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpin, NEmpty, NTag, NSpace, NCard, NInput, NButton } from 'naive-ui'
+import { NSpin, NEmpty, NSpace, NCard, NInput, NButton } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi } from '@/api'
 import { shotDateHint } from '@/composables/usePathParse'
+import SingleImagePreview from '@/components/SingleImagePreview.vue'
 
 const router = useRouter()
 const store = usePolarscanStore()
@@ -21,7 +28,6 @@ onMounted(async () => {
 })
 
 const filtered = computed(() => {
-  // 后端暂不支持 ?tag 过滤（迁移期），客户端先按 id 子串过滤
   if (!tagFilter.value.trim()) return store.summaries
   return store.summaries.filter((s) => s.id.includes(tagFilter.value.trim()))
 })
@@ -74,9 +80,13 @@ function open(id: string) {
       <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px">
         <NCard v-for="s in filtered" :key="s.id" hoverable content-style="padding: 0"
                style="cursor: pointer" @click="open(s.id)">
-          <div style="aspect-ratio: 1; overflow: hidden; background: #eee; display: flex; align-items: center; justify-content: center">
-            <img :src="`/thumb/${encodeURIComponent(s.id)}`" :alt="s.id" loading="lazy"
-                 style="width: 100%; height: 100%; object-fit: cover" />
+          <div style="aspect-ratio: 1; overflow: hidden; background: #eee">
+            <SingleImagePreview
+              :polaroid-id="s.id"
+              :asset="s.cover_asset ?? null"
+              :asset-idx="0"
+              :enable-lightbox="false"
+            />
           </div>
           <div style="padding: 8px 12px">
             <code style="font-size: 12px">{{ s.id }}</code>
