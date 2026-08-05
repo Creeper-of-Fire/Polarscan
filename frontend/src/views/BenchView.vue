@@ -18,7 +18,7 @@ import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi, tagsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
-import { idDateRange } from '@/composables/usePathParse'
+import { assetsDateRange } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
@@ -87,8 +87,8 @@ async function goto(direction: 'prev' | 'next' | 'untagged') {
   }
 }
 
-// 日期段
-const dateRange = computed(() => idDateRange(props.pid))
+// 日期段:从已绑资产路径推断,范围由父目录的日期范围语法决定 (支持跨月 2026.02.28-03.01).
+const dateRange = computed(() => assetsDateRange(polaroid.value.assets))
 
 // ---------- 编辑动作 (统一 debouncedSave) ----------
 //
@@ -283,7 +283,7 @@ const saveStateColor = computed(() => {
 
       <!-- 日期段 -->
       <div v-if="dateRange.length > 0" style="margin-bottom: 12px">
-        <span style="color: #666; margin-right: 8px">id 日期段：</span>
+        <span style="color: #666; margin-right: 8px">资产推断日期段：</span>
         <NButton v-for="d in dateRange" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
           {{ d }}
         </NButton>
@@ -337,7 +337,6 @@ const saveStateColor = computed(() => {
           <NCard title="资产 (assets)" style="margin-top: 12px">
             <AssetListEditor
               v-model="polaroid.assets"
-              :polaroid-id="polaroid.id"
               @update:model-value="scheduleSave"
             />
             <small style="display: block; margin-top: 8px; color: #999">
@@ -368,7 +367,7 @@ const saveStateColor = computed(() => {
           <NCard title="拍摄日期（shot_date）" style="margin-top: 12px">
             <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
             <div v-if="dateRange.length > 0" style="margin-top: 8px">
-              <span style="color: #666; font-size: 12px">id 日期范围 → 点选填入：</span>
+              <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
               <NButton v-for="d in dateRange" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
                 {{ d }}
               </NButton>

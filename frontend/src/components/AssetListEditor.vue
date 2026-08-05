@@ -14,8 +14,11 @@
   - 每行 thumb 走统一的 (path, hash) by-path 契约;不需要 polaroidId
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
-import { NInput, NButton, NSpace, NAutoComplete } from 'naive-ui'
+import { computed, h } from 'vue'
+import {
+  NInput, NButton, NSpace, NAutoComplete,
+  NForm, NFormItem, NEmpty,
+} from 'naive-ui'
 import SingleImagePreview from '@/components/SingleImagePreview.vue'
 import type { Asset } from '@/types'
 
@@ -45,16 +48,20 @@ function removeAsset(idx: number) {
     props.modelValue.filter((_, i) => i !== idx),
   )
 }
+
+// 空态: NEmpty 渲染 (naive-ui 元件, 无手撸 HTML)
+function renderEmpty() {
+  return h(NEmpty, { description: '还没有资产', size: 'small' })
+}
 </script>
 
 <template>
   <div class="asset-list-editor">
-    <div v-if="modelValue.length === 0" class="ale-empty">
-      还没有资产
-    </div>
+    <component :is="renderEmpty()" v-if="modelValue.length === 0" />
 
     <div
       v-for="(asset, idx) in modelValue"
+      v-else
       :key="`${asset.path}-${idx}`"
       class="ale-row"
     >
@@ -66,39 +73,39 @@ function removeAsset(idx: number) {
         />
       </div>
 
-      <div class="ale-fields">
-        <NSpace align="center" :wrap="true">
-          <div class="ale-field-group">
-            <label class="ale-label">角色 (role)</label>
+      <NForm label-placement="top" size="small" class="ale-fields" :show-feedback="false">
+        <NSpace :wrap="true" :size="12">
+          <NFormItem label="角色 (role)">
             <NAutoComplete
               :value="asset.role"
               :options="ROLE_OPTIONS"
               clearable
               placeholder="front / back / additional / ..."
+              style="min-width: 220px"
               @update:value="(v: string) => updateAsset(idx, { role: v })"
             />
-          </div>
-          <div class="ale-field-group">
-            <label class="ale-label">拍摄时间 (captured_at)</label>
+          </NFormItem>
+          <NFormItem label="拍摄时间 (captured_at)">
             <NInput
               :value="asset.captured_at ?? ''"
               placeholder="ISO 8601 (例: 2026-08-04T10:00:00)"
+              style="min-width: 240px"
               @update:value="(v: string) => updateAsset(idx, { captured_at: v || null })"
             />
-          </div>
-          <div class="ale-field-group">
-            <label class="ale-label">设备 (device)</label>
+          </NFormItem>
+          <NFormItem label="设备 (device)">
             <NInput
               :value="asset.device ?? ''"
               placeholder="例: iPhone 15"
+              style="min-width: 200px"
               @update:value="(v: string) => updateAsset(idx, { device: v || null })"
             />
-          </div>
+          </NFormItem>
         </NSpace>
         <code class="ale-path" :title="asset.path">{{ asset.path }}</code>
-      </div>
+      </NForm>
 
-      <NButton quaternary type="error" @click="removeAsset(idx)">×</NButton>
+      <NButton quaternary type="error" circle @click="removeAsset(idx)">×</NButton>
     </div>
   </div>
 </template>
@@ -109,19 +116,11 @@ function removeAsset(idx: number) {
   flex-direction: column;
   gap: 8px;
 }
-.ale-empty {
-  padding: 24px;
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  border: 1px dashed #ddd;
-  border-radius: 4px;
-}
 .ale-row {
   display: grid;
   grid-template-columns: 96px 1fr auto;
   gap: 12px;
-  align-items: stretch;
+  align-items: flex-start;
   padding: 8px;
   border: 1px solid #eee;
   border-radius: 4px;
@@ -135,22 +134,11 @@ function removeAsset(idx: number) {
   overflow: hidden;
 }
 .ale-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   min-width: 0;
 }
-.ale-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 200px;
-}
-.ale-label {
-  font-size: 11px;
-  color: #666;
-}
 .ale-path {
+  display: block;
+  margin-top: 6px;
   font-size: 11px;
   color: #999;
   white-space: nowrap;

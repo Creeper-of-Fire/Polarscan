@@ -17,7 +17,7 @@ import {
 import { tagsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
-import { parentDirName, parseFolderDateRange } from '@/composables/usePathParse'
+import { assetsDateRange } from '@/composables/usePathParse'
 import type { Asset, DroppedFile } from '@/types'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
@@ -50,6 +50,9 @@ const primaryCharForId = computed<string | null>(() => {
   }
   return null
 })
+
+// 从已拖入资产路径推断的日期范围 (用于 shot_date 快捷按钮)
+const assetDates = computed(() => assetsDateRange(polaroid.value.assets))
 
 // ---------- dropzone ----------
 const dz = useDropzone({
@@ -87,17 +90,10 @@ function handleDropReady(_identifiedFiles: DroppedFile[]) {
     })
   polaroid.value.assets = [...polaroid.value.assets, ...newAssets]
 
-  // 从第一个新文件的路径推断 shot_date
+  // 从当前全部 assets 路径推断拍立得范围的"第一天"作为 shot_date hint (留空时不强行覆盖)
   if (!polaroid.value.shot_date) {
-    for (const p of newOnes.map((i) => i.path)) {
-      const dn = parentDirName(p)
-      if (!dn) continue
-      const r = parseFolderDateRange(dn)
-      if (r) {
-        polaroid.value.shot_date = r.start
-        break
-      }
-    }
+    const all = assetsDateRange(polaroid.value.assets)
+    if (all.length > 0) polaroid.value.shot_date = all[0]
   }
   // 触发派生 id
   suggestId()
@@ -123,6 +119,11 @@ async function suggestId() {
 
 function onShotDateInput(v: string) {
   polaroid.value!.shot_date = v || null
+  suggestId()
+}
+
+function applyDate(d: string) {
+  polaroid.value.shot_date = d
   suggestId()
 }
 
@@ -235,6 +236,12 @@ async function submit() {
 
       <NFormItem label="拍摄日期（shot_date）">
         <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
+        <div v-if="assetDates.length > 0" style="margin-top: 8px">
+          <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
+          <NButton v-for="d in assetDates" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
+            {{ d }}
+          </NButton>
+        </div>
       </NFormItem>
 
       <!-- 角色 + 其他标签 (统一组件, 与 BenchView 共享) -->
