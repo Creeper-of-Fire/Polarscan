@@ -49,6 +49,22 @@ export const api = {
     )
   },
 
+  // PUT JSON (幂等创建/替换)
+  async putJson<T>(url: string, data: unknown): Promise<T> {
+    return handle<T>(
+      await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    )
+  },
+
+  // DELETE (返回 JSON {ok} 或抛 ApiError)
+  async deleteJson<T>(url: string): Promise<T> {
+    return handle<T>(await fetch(url, { method: 'DELETE' }))
+  },
+
   // GET 资源（thumb / img / index.html），返回 blob URL
   async getBlobUrl(url: string): Promise<string> {
     const r = await fetch(url)

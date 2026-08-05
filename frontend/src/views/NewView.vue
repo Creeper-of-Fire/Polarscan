@@ -41,7 +41,8 @@ const { files, status, errorMsg, importable, handleDrop,
   removeFile, reset, fileStatusLabel } = dz
 
 // dropzone 完成: 把 importable 文件追加到 polaroid.assets
-// 每个 asset 都带 hash (dropzone 在浏览器侧用 blake2b 算) — 这是 PUT 入库必需的 invariant.
+// 每个 asset 都带 hash (dropzone 在浏览器侧用 blake2b 算) — 这是 PUT 入库必需的 invariant,
+// 同时也是后续 thumb URL cache-bust 的依据 (后端 /thumb?path=&hash=&v= 走 hash).
 function handleDropReady(_identifiedFiles: DroppedFile[]) {
   const newOnes = importable.value
   if (newOnes.length === 0) return
@@ -206,7 +207,6 @@ const charOptions = ref<string[]>([])
     <NCard title="资产 (assets)" style="margin-bottom: 16px" content-style="padding: 16px">
       <AssetListEditor
         v-model="polaroid.assets"
-        :polaroid-id="polaroid.id"
       />
     </NCard>
 

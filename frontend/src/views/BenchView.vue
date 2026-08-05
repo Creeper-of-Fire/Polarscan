@@ -21,6 +21,7 @@ import { useDropzone } from '@/composables/useDropzone'
 import { useChipStream } from '@/composables/useChipStream'
 import { idDateRange } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
+import AssetListEditor from '@/components/AssetListEditor.vue'
 import type { DroppedFile } from '@/types'
 
 const props = defineProps<{ pid: string }>()
@@ -119,57 +120,52 @@ async function goto(direction: 'prev' | 'next' | 'untagged') {
 // 日期段
 const dateRange = computed(() => idDateRange(props.pid))
 
-// ---------- 编辑动作 ----------
-async function onTagsChanged() {
+// ---------- 编辑动作 (统一 debouncedSave) ----------
+//
+// 所有 form 修改 (tags / shot_date / notes / assets) 都走单一 PUT.
+// 任意字段修改 → debouncedSave() → debounce 0.6s 后 send 一个完整的 polaroid.
+// PUT 端点幂等, 重发同一份状态不会出错也不产生 side effect.
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    void doSave()
+  }, 600)
+}
+
+async function doSave() {
+  try {
+    await editor.save(polaroid.value)
+  } catch (e) {
+    message.error(`保存失败: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+function onTagsChanged() {
   const all: string[] = [...charTags.value, ...otherTags.value]
   polaroid.value.tags = all
-  try {
-    await editor.saveMeta({ tags: all })
-  } catch (e) {
-    message.error(`保存标签失败: ${e instanceof Error ? e.message : String(e)}`)
-  }
+  scheduleSave()
 }
 
 function onShotDateInput(v: string) {
   polaroid.value!.shot_date = v || null
-  if (shotTimer) clearTimeout(shotTimer)
-  shotTimer = setTimeout(async () => {
-    try {
-      await editor.saveMeta({ shot_date: polaroid.value.shot_date })
-    } catch (e) {
-      message.error(`保存日期失败: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, 600)
+  scheduleSave()
 }
 
 function onNotesInput(v: string) {
   polaroid.value!.notes = v
-  if (notesTimer) clearTimeout(notesTimer)
-  notesTimer = setTimeout(async () => {
-    try {
-      await editor.saveMeta({ notes: polaroid.value.notes })
-    } catch (e) {
-      message.error(`保存备注失败: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, 600)
+  scheduleSave()
 }
-
-let shotTimer: ReturnType<typeof setTimeout> | null = null
-let notesTimer: ReturnType<typeof setTimeout> | null = null
 
 function applyDate(d: string) {
   polaroid.value.shot_date = d
-  if (shotTimer) clearTimeout(shotTimer)
-  shotTimer = setTimeout(async () => {
-    try {
-      await editor.saveMeta({ shot_date: polaroid.value.shot_date })
-    } catch (e) {
-      message.error(`保存日期失败: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, 600)
+  scheduleSave()
 }
 
-// 删除 polaroid
+// delete polaroid
 async function deletePolaroid() {
   try {
     await polaroidsApi.delete(props.pid)
@@ -189,7 +185,7 @@ function confirmDelete() {
   })
 }
 
-// dropzone 追加
+// dropzone 追加 (这个跟 save 不同语义: 加新 path 到 server 端, server 算 hash)
 async function doAppend(paths: string[]) {
   try {
     await editor.appendFiles(paths)
@@ -369,12 +365,24 @@ const saveStateColor = computed(() => {
         </div>
       </section>
 
-      <!-- 主布局: 左侧 album preview + 右侧元数据 -->
+      <!-- 主布局: 左侧 album preview + 资产编辑 + 右侧元数据 -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px">
-        <!-- 左: 图片 album (PolaroidImagePreview) -->
+        <!-- 左: 图片 album (PolaroidImagePreview) + 资产编辑 (AssetListEditor) -->
         <div>
           <NCard title="预览">
             <PolaroidImagePreview :polaroid="polaroid" :show-captions="true" />
+          </NCard>
+
+          <NCard title="资产 (assets)" style="margin-top: 12px">
+            <AssetListEditor
+              v-model="polaroid.assets"
+              :polaroid-id="polaroid.id"
+              @update:model-value="scheduleSave"
+            />
+            <small style="display: block; margin-top: 8px; color: #999">
+              改 role / captured_at / device / 删 asset 都会自动保存 (debounce 0.6s);
+              加 path 用上方拖入区。
+            </small>
           </NCard>
         </div>
 

@@ -2,10 +2,16 @@
 
 迁移到 Vue SPA + JSON API 后的测试模型：直接测后端 JSON API + form-encoded POST，
 不再测旧 HTML 模板响应（templates/ 已删除）。
+
+PUT /polaroid/{pid} 为 C+U 合并的统一保存入口 (2026-08 重构):
+  - 接受完整 polaroid JSON
+  - assets[].hash 必须存在 (128 字符 blake2b), 由前端 dropzone 在浏览器算好后传
+  - 幂等: 创建或整体替换
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import tempfile
 import unittest
@@ -19,6 +25,15 @@ from PIL import Image
 import apps.web.server as server
 from polarscan.api import Polarscan
 from polarscan.core import Asset, Polaroid
+
+
+def blake2b_hex(path: Path) -> str:
+    """与前端 dropzone (JS blake2b, digest_size=64) 对齐的 128 hex 字符串."""
+    h = hashlib.blake2b(digest_size=64)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 @dataclass
@@ -65,15 +80,23 @@ async def request_asgi(
             ]
         )
 
+    # 支持 query string: 调用方可传 "/thumb?path=...&hash=..."
+    if "?" in path:
+        path_only, query_string = path.split("?", 1)
+        query_string_bytes = query_string.encode("utf-8")
+    else:
+        path_only = path
+        query_string_bytes = b""
+
     scope = {
         "type": "http",
         "asgi": {"version": "3.0", "spec_version": "2.3"},
         "http_version": "1.1",
         "method": method,
         "scheme": "http",
-        "path": path,
-        "raw_path": path.encode("utf-8"),
-        "query_string": b"",
+        "path": path_only,
+        "raw_path": path_only.encode("utf-8"),
+        "query_string": query_string_bytes,
         "root_path": "",
         "headers": headers,
         "client": ("127.0.0.1", 50000),
@@ -176,54 +199,169 @@ class WebEndToEndTest(unittest.TestCase):
         self.assertEqual(data["assets"][0]["role"], "front")
 
     def test_thumb_endpoint(self) -> None:
-        """GET /thumb/{pid} 返回图片字节。"""
-        response = self.request("GET", "/thumb/existing_001")
+        """GET /thumb?path=&hash= 按 (path, hash) 生成缩略图。
+        polaroid 索引不影响 thumb 可用性 — 走统一 by-path 入口。"""
+        from urllib.parse import urlencode
+
+        h = blake2b_hex(self.image_path)
+        qs = urlencode({"path": str(self.image_path), "hash": h})
+        response = self.request("GET", f"/thumb?{qs}")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.headers["content-type"].startswith("image/"))
 
-    def test_create_polaroid_via_post(self) -> None:
-        """POST /new (form-encoded) 创建 polaroid，返回 JSON {ok, pid}。"""
+    def test_create_polaroid_via_put(self) -> None:
+        """PUT /polaroid/{pid} 创建新 polaroid（C 路径）。
+        返回 {ok, pid, asset_count, created=true}."""
         response = self.request(
-            "POST",
-            "/new",
-            data={
-                "pid": "created_001",
-                "asset_paths": str(self.image_path),
-                "tags": "char:hime, shot:pair",
+            "PUT",
+            "/polaroid/created_001",
+            json_body={
+                "id": "created_001",
                 "shot_date": "2026-08-04",
+                "tags": ["char:hime", "shot:pair"],
                 "notes": "网页端创建",
+                "assets": [
+                    {
+                        "role": "front",
+                        "path": str(self.image_path),
+                        "captured_at": None,
+                        "device": None,
+                        "hash": blake2b_hex(self.image_path),
+                    },
+                ],
             },
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["ok"])
         self.assertEqual(body["pid"], "created_001")
+        self.assertEqual(body["asset_count"], 1)
+        self.assertTrue(body["created"])
         # 验证 polaroid 真的被创建了
-        self.assertIsNotNone(server.ps.polaroid("created_001"))
+        server.ps.reload()
+        p = server.ps.polaroid("created_001")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.tags, ["char:hime", "shot:pair"])
+        self.assertEqual(p.assets[0].role, "front")
 
-    def test_autosave(self) -> None:
-        """POST /bench/{pid}/autosave 增量保存 tags / shot_date / notes。"""
-        response = self.request(
-            "POST",
-            "/bench/existing_001/autosave",
-            data={
-                "tags": "char:strawberry, char:hime, shot:solo",
-                "shot_date": "2026-08-05",
-                "notes": "自动保存后的备注",
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["ok"])
-        self.assertEqual(body["tags"], ["char:strawberry", "char:hime", "shot:solo"])
-        self.assertEqual(body["shot_date"], "2026-08-05")
+    def test_update_polaroid_via_put(self) -> None:
+        """PUT /polaroid/{pid} 替换现有 polaroid 状态（U 路径）。
+        与 autosave 等价: 改 tags/shot_date/notes (assets 保持).
+        created=false, 第二次同样 body PUT 仍幂等."""
+        hash_now = blake2b_hex(self.image_path)
+        body = {
+            "id": "existing_001",
+            "shot_date": "2026-08-05",
+            "tags": ["char:strawberry", "char:hime", "shot:solo"],
+            "notes": "自动保存后的备注",
+            "assets": [
+                {
+                    "role": "front",
+                    "path": str(self.image_path),
+                    "captured_at": None,
+                    "device": None,
+                    "hash": hash_now,
+                },
+            ],
+        }
+        # 第一次: 更新
+        r1 = self.request("PUT", "/polaroid/existing_001", json_body=body)
+        self.assertEqual(r1.status_code, 200)
+        self.assertFalse(r1.json()["created"])
 
         # 验证 polaroid 状态真的更新
         server.ps.reload()
         p = server.ps.polaroid("existing_001")
         self.assertEqual(p.shot_date, "2026-08-05")
         self.assertEqual(p.notes, "自动保存后的备注")
-        self.assertIn("char:hime", p.tags)
+        self.assertEqual(p.tags, ["char:strawberry", "char:hime", "shot:solo"])
+
+        # 第二次: 幂等 - 同样的 body
+        r2 = self.request("PUT", "/polaroid/existing_001", json_body=body)
+        self.assertEqual(r2.status_code, 200)
+        self.assertFalse(r2.json()["created"])
+
+    def test_put_rejects_missing_hash(self) -> None:
+        """asset 缺 hash → 400 (前端 dropzone invariant: 必须传 hash)."""
+        response = self.request(
+            "PUT",
+            "/polaroid/no_hash_001",
+            json_body={
+                "id": "no_hash_001",
+                "shot_date": None,
+                "tags": [],
+                "notes": "",
+                "assets": [
+                    {"role": "front", "path": str(self.image_path), "hash": ""},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_put_rejects_empty_assets(self) -> None:
+        """polaroid assets 空 → 400."""
+        response = self.request(
+            "PUT",
+            "/polaroid/empty_001",
+            json_body={
+                "id": "empty_001",
+                "shot_date": None,
+                "tags": [],
+                "notes": "",
+                "assets": [],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_put_rejects_id_mismatch(self) -> None:
+        """url 上 pid 与 body.id 不一致 → 400."""
+        response = self.request(
+            "PUT",
+            "/polaroid/url_pid",
+            json_body={
+                "id": "different_pid",
+                "shot_date": None,
+                "tags": [],
+                "notes": "",
+                "assets": [
+                    {"role": "front", "path": str(self.image_path),
+                     "hash": blake2b_hex(self.image_path)},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_save_assets_via_put(self) -> None:
+        """PUT 整体替换 polaroid, 改 asset role/captured_at (同时验证整体替换语义)."""
+        hash_now = blake2b_hex(self.image_path)
+        response = self.request(
+            "PUT",
+            "/polaroid/existing_001",
+            json_body={
+                "id": "existing_001",
+                "shot_date": "2026-08-04",  # 保持
+                "tags": ["char:strawberry"],  # 保持
+                "notes": "端到端测试基准记录",  # 保持
+                "assets": [
+                    {
+                        "role": "back",  # 改了
+                        "path": str(self.image_path),
+                        "captured_at": "2026-08-04T11:00:00",
+                        "device": None,
+                        "hash": hash_now,
+                    },
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["pid"], "existing_001")
+        self.assertEqual(body["asset_count"], 1)
+
+        server.ps.reload()
+        p = server.ps.polaroid("existing_001")
+        self.assertEqual(p.assets[0].role, "back")
+        self.assertEqual(p.assets[0].captured_at, "2026-08-04T11:00:00")
 
     def test_pool_edit(self) -> None:
         """POST /pool/{prefix}/{key}/edit 保存标签元数据。"""
@@ -247,8 +385,8 @@ class WebEndToEndTest(unittest.TestCase):
         self.assertEqual(info["aliases"], ["hime", "小姬"])
 
     def test_delete_polaroid(self) -> None:
-        """POST /bench/{pid}/delete 删除 polaroid。"""
-        response = self.request("POST", "/bench/existing_001/delete")
+        """DELETE /polaroid/{pid} 删除 polaroid。"""
+        response = self.request("DELETE", "/polaroid/existing_001")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["ok"])
         self.assertIsNone(server.ps.polaroid("existing_001"))
@@ -256,26 +394,6 @@ class WebEndToEndTest(unittest.TestCase):
         # 后续 GET 返回 404
         response = self.request("GET", "/api/polaroids/existing_001")
         self.assertEqual(response.status_code, 404)
-
-    def test_save_assets_json(self) -> None:
-        """POST /bench/{pid}/save-assets (JSON) 原子替换 assets。"""
-        response = self.request(
-            "POST",
-            "/bench/existing_001/save-assets",
-            json_body={
-                "assets": [
-                    {"role": "back", "path": str(self.image_path), "captured_at": None, "device": None},
-                ],
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["pid"], "existing_001")
-        self.assertEqual(body["asset_count"], 1)
-
-        server.ps.reload()
-        p = server.ps.polaroid("existing_001")
-        self.assertEqual(p.assets[0].role, "back")
 
     def test_drop_identify(self) -> None:
         """POST /api/drop/identify 用 hash 反查 (无 library_root 时仅返回 by_hash)。"""

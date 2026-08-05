@@ -82,9 +82,8 @@ function open(id: string) {
                style="cursor: pointer" @click="open(s.id)">
           <div style="aspect-ratio: 1; overflow: hidden; background: #eee">
             <SingleImagePreview
-              :polaroid-id="s.id"
-              :asset="s.cover_asset ?? null"
-              :asset-idx="0"
+              :path="s.cover_asset?.path ?? null"
+              :hash="s.cover_asset?.hash"
               :enable-lightbox="false"
             />
           </div>

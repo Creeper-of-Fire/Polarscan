@@ -185,90 +185,69 @@ def api_suggest_id(shot_date: Optional[str] = None, primary_char: Optional[str] 
 # ============================================================
 # POST 端点：form-encoded 接收（前端 FormData），返回 JSON
 # ============================================================
-@app.post("/bench/{pid}/autosave")
-async def bench_autosave(
-    pid: str,
-    shot_date: Optional[str] = Form(None),
-    notes: Optional[str] = Form(None),
-    tags: Optional[str] = Form(None),
-):
-    p = ps.polaroid(pid)
-    if p is None:
-        return JSONResponse({"ok": False, "error": "未找到拍立得"}, status_code=404)
-    if tags is not None:
-        p.tags = [t.strip() for t in tags.split(",") if t.strip()]
-    if shot_date is not None:
-        p.shot_date = shot_date.strip() or None
-    if notes is not None:
-        p.notes = notes
-    ps.upsert_polaroid(p)
-    ps.save()
-    return {"ok": True, "tags": p.tags, "shot_date": p.shot_date, "notes_len": len(p.notes)}
+# ============================================================
+# 写 Polaroid 状态: 单一 PUT (C+U 合并)
+#
+# 设计原则 (2026-08 重构):
+# - 单一 PUT endpoint 取代原本的 POST /new, POST /bench/{pid}/autosave,
+#   POST /bench/{pid}/save-assets. C 和 U 在此合并.
+# - 幂等: PUT 同一 polaroid 状态两次 → 同一最终状态.
+# - assets[].hash 由前端提供且必须存在 (128 字符, blake2b); 后端信任, 不读 F: 盘.
+#   前端 dropzone 在浏览器侧用 blake2b 算 hash, 同时该 hash 又是 ?v= cache-bust 的依据.
+# ============================================================
+@app.put("/polaroid/{pid}")
+async def api_save_polaroid(pid: str, request: Request):
+    """幂等创建或替换 polaroid.
 
+    Body: 完整 polaroid JSON ({id, shot_date, tags, notes, assets[]}).
+    Assets 每项含 role/path/captured_at/device/hash; hash 必须 128 字符.
 
-@app.post("/bench/{pid}/save-assets")
-async def bench_save_assets(pid: str, request: Request):
-    """原子替换 polaroid 的 assets 列表（modal 编辑入口）。
-
-    请求体 (JSON): { assets: [{role, path, captured_at, device}, ...] }
-    约束: assets 里的 path 集合必须 ⊆ 当前 polaroid 的 path 集合。
+    pid 不存在 → 创建; pid 存在 → 整体替换 (assets 也整体替换, 允许任意路径集合).
     """
     try:
         body = await request.json()
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(400, "请求体必须是合法 JSON")
 
-    assets = body.get("assets")
-    if not isinstance(assets, list) or not assets:
-        raise HTTPException(400, "缺少 assets（非空列表）")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "请求体必须是 polaroid 对象")
 
+    from polarscan.core.index import Polaroid
     try:
-        polaroid = ps.save_assets(pid, assets)
-    except ValueError as e:
-        msg = str(e)
-        if "未找到" in msg:
-            raise HTTPException(404, msg)
-        raise HTTPException(400, msg)
+        polaroid = Polaroid.from_dict(body)
+    except Exception as e:
+        raise HTTPException(400, f"polaroid 字段格式错: {e}")
 
-    return {"pid": polaroid.id, "asset_count": len(polaroid.assets)}
+    if polaroid.id != pid:
+        raise HTTPException(400, f"url 上 pid ({pid}) 与 body.id ({polaroid.id}) 不一致")
+
+    if not polaroid.assets:
+        raise HTTPException(400, "polaroid 必须至少有一个 asset")
+
+    for idx, asset in enumerate(polaroid.assets):
+        if not asset.hash or len(asset.hash) != 128:
+            raise HTTPException(
+                400,
+                f"assets[{idx}].hash 必须存在且为 128 字符 (前端 dropzone 算好后传)",
+            )
+
+    is_new = ps.polaroid(pid) is None
+    ps.upsert_polaroid(polaroid)
+    ps.save()
+    return {
+        "ok": True,
+        "pid": polaroid.id,
+        "asset_count": len(polaroid.assets),
+        "created": is_new,
+    }
 
 
-@app.post("/bench/{pid}/delete")
-async def bench_delete(pid: str):
+@app.delete("/polaroid/{pid}")
+def api_delete_polaroid(pid: str):
     if not ps.delete_polaroid(pid):
         raise HTTPException(404, "未找到拍立得")
     ps.save()
     return {"ok": True}
-
-
-@app.post("/new")
-async def new_create(
-    pid: str = Form(...),
-    asset_paths: str = Form(""),
-    tags: str = Form(""),
-    shot_date: str = Form(""),
-    notes: str = Form(""),
-):
-    paths = [s.strip() for s in asset_paths.splitlines() if s.strip()]
-    if not paths:
-        return JSONResponse({"ok": False, "error": "至少填一个资产路径"}, status_code=400)
-    if ps.polaroid(pid):
-        return JSONResponse({"ok": False, "error": f"id '{pid}' 已存在，请修改后重试"}, status_code=400)
-    from polarscan.core.index import Polaroid, Asset
-    p = Polaroid(
-        id=pid.strip(),
-        shot_date=shot_date.strip() or None,
-        tags=[t.strip() for t in tags.split(",") if t.strip()],
-        notes=notes,
-    )
-    for i, raw_path in enumerate(paths):
-        role = "front" if i == 0 else ("back" if i == 1 else "additional")
-        asset = Asset.from_path(raw_path, role=role)
-        asset.ensure_thumb(ps.data_dir)
-        p.assets.append(asset)
-    ps.upsert_polaroid(p)
-    ps.save()
-    return {"ok": True, "pid": p.id}
 
 
 @app.post("/pool/{prefix}/{key}/edit")
@@ -310,51 +289,49 @@ def reload_endpoint():
 
 
 # ============================================================
-# 图片 / 缩略图
+# 图片 / 缩略图 — 统一 by-path 入口 (不依赖 polaroid 索引)
+#
+# 设计动机 (2026-08 重构):
+# - 旧 contract (/thumb/{pid}/{idx}, /img/{pid}/{idx}) 要求服务端先按 pid 找到 polaroid,
+#   再按 idx 找 asset. 这导致 NewView 拖入后 polaroid 未索引时无法预览.
+# - 新 contract 接收 (path, hash): path 直接定位 F: 盘文件, hash 派生 thumb 文件名.
+#   polaroid 是否索引与 thumb 可用性解耦 — 拖入即可预览, 无需"先创建再预览"分支.
+# - PUT 仍无副作用: 服务端只在 GET 时按需生成 thumb (单次 F: 盘 IO).
 # ============================================================
-@app.get("/thumb/{pid}")
-def thumb(pid: str):
-    p = ps.polaroid(pid)
-    if p is None:
-        raise HTTPException(404, "未找到拍立得")
-    tp = ps.thumb_path_for(p, asset_idx=0)
-    if tp is None or not tp.exists():
-        raise HTTPException(404, "未找到缩略图（资产缺失或无法读取）")
-    return FileResponse(tp)
+from polarscan.core.asset_thumb import (
+    LONG_EDGE,
+    QUALITY,
+    THUMBS_DIRNAME,
+    SHORT_HASH_LEN,
+    make_thumb_image,
+)
 
 
-@app.get("/thumb/{pid}/{asset_idx:int}")
-def thumb_idx(pid: str, asset_idx: int):
-    p = ps.polaroid(pid)
-    if p is None:
-        raise HTTPException(404, "未找到拍立得")
-    tp = ps.thumb_path_for(p, asset_idx=asset_idx)
-    if tp is None or not tp.exists():
-        raise HTTPException(404, "未找到缩略图")
-    return FileResponse(tp)
+@app.get("/thumb")
+def thumb_by_path(path: str, hash: str):
+    """统一缩略图入口: by (path, hash). 不依赖 polaroid 索引.
 
-
-@app.get("/img/{pid}")
-def img(pid: str):
-    """仅在用户从工作台主动点击"查看原图"时读取 F 盘原图。"""
-    p = ps.polaroid(pid)
-    if p is None or not p.assets:
-        raise HTTPException(404, "未找到资产")
-    return _serve_asset(p.assets[0].path)
-
-
-@app.get("/img/{pid}/{asset_idx:int}")
-def img_idx(pid: str, asset_idx: int):
-    p = ps.polaroid(pid)
-    if p is None or not p.assets or asset_idx < 0 or asset_idx >= len(p.assets):
-        raise HTTPException(404, "未找到资产")
-    return _serve_asset(p.assets[asset_idx].path)
-
-
-def _serve_asset(asset_path: str):
-    src = Path(asset_path)
+    - hash (>= 6 字符) 派生 thumb filename: `{stem}_{hash[:6]}.jpg` 于 `data_dir/.thumbs/`.
+    - thumb 已存在 → 直接返回 (无 IO).
+    - thumb 不存在 + 源文件存在 → 生成一次 (单次 F: 盘 IO, 之后缓存命中).
+    - thumb 不存在 + 源文件不存在 → 404.
+    """
+    if not hash or len(hash) < SHORT_HASH_LEN:
+        raise HTTPException(400, f"hash 必须至少 {SHORT_HASH_LEN} 字符")
+    src = Path(path)
     if not src.exists():
-        raise HTTPException(404, "资产文件不存在")
+        raise HTTPException(404, f"源文件不存在: {path}")
+    stem = src.stem
+    thumb_path = DATA_DIR / THUMBS_DIRNAME / f"{stem}_{hash[:SHORT_HASH_LEN]}.jpg"
+    return FileResponse(make_thumb_image(src, thumb_path))
+
+
+@app.get("/img")
+def img_by_path(path: str):
+    """统一原图入口: by path. 仅 lightbox 点击时调用, 按需读 F: 盘."""
+    src = Path(path)
+    if not src.exists():
+        raise HTTPException(404, f"源文件不存在: {path}")
     return FileResponse(src)
 
 

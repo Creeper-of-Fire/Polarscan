@@ -18,27 +18,16 @@ export const polaroidsApi = {
   get(pid: string): Promise<Polaroid> {
     return api.get<Polaroid>(`/api/polaroids/${encodeURIComponent(pid)}`)
   },
-  autosave(
-    pid: string,
-    fields: { tags?: string[]; shot_date?: string; notes?: string },
-  ): Promise<{ ok: boolean; error?: string; tags?: string[]; shot_date?: string | null; notes_len?: number }> {
-    return api.postForm(
-      `/bench/${encodeURIComponent(pid)}/autosave`,
-      {
-        tags: fields.tags ? fields.tags.join(', ') : undefined,
-        shot_date: fields.shot_date,
-        notes: fields.notes,
-      },
-    )
-  },
-  saveAssets(pid: string, assets: Asset[]): Promise<{ pid: string; asset_count: number }> {
-    return api.postJson(
-      `/bench/${encodeURIComponent(pid)}/save-assets`,
-      { assets },
+  /** 单一保存入口: 幂等 PUT, 创建或替换 polaroid 全部状态.
+   *  Assets 每项必须含 hash (128 字符 blake2b), 后端信任不读 F: 盘. */
+  save(polaroid: Polaroid): Promise<{ ok: boolean; pid: string; asset_count: number; created: boolean }> {
+    return api.putJson(
+      `/polaroid/${encodeURIComponent(polaroid.id)}`,
+      polaroid,
     )
   },
   delete(pid: string): Promise<{ ok: boolean }> {
-    return api.postForm(`/bench/${encodeURIComponent(pid)}/delete`, {})
+    return api.deleteJson(`/polaroid/${encodeURIComponent(pid)}`)
   },
   goto(pid: string, direction: 'prev' | 'next' | 'untagged'): Promise<{ target: string | null }> {
     return api.get<{ target: string | null }>(
@@ -54,23 +43,7 @@ export const polaroidsApi = {
 }
 
 export const newApi = {
-  create(payload: {
-    pid: string
-    shot_date?: string
-    primary_char?: string
-    asset_paths: string[]
-    tags?: string[]
-    notes?: string
-  }): Promise<{ ok: boolean; pid?: string; error?: string }> {
-    return api.postForm('/new', {
-      pid: payload.pid,
-      shot_date: payload.shot_date,
-      primary_char: payload.primary_char,
-      asset_paths: payload.asset_paths.join('\n'),
-      tags: payload.tags ? payload.tags.join(', ') : undefined,
-      notes: payload.notes,
-    })
-  },
+  /** 派生一个 pid 候选 (不写入) - NewView 表单用 */
   suggestId(shot_date?: string, primary_char?: string): Promise<{ pid: string }> {
     const params = new URLSearchParams()
     if (shot_date) params.set('shot_date', shot_date)

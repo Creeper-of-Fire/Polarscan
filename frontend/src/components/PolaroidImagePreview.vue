@@ -8,9 +8,13 @@
   - 不管编辑,不管保存;只读展示
 
   Props:
-    polaroid     当前拍立得 (id 为空 = 尚未保存)
+    polaroid     当前拍立得
     initialIdx   初始展示第几张 (默认 0)
     showCaptions 是否在缩略图条下显示 role / 文件名 (默认 false)
+
+  设计要点 (2026-08 重构):
+  - 走统一的 (path, hash) by-path thumb 契约;不依赖 polaroid 是否已索引.
+  - 拖入即能预览;NewView 和 BenchView 走完全相同的代码路径,无分支.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -42,7 +46,6 @@ const safeIdx = computed(() => {
 })
 
 const hasAssets = computed(() => props.polaroid.assets.length > 0)
-const canPreview = computed(() => hasAssets.value && props.polaroid.id !== '')
 
 const currentAsset = computed(() =>
   hasAssets.value ? props.polaroid.assets[safeIdx.value] : null,
@@ -51,7 +54,7 @@ const currentAsset = computed(() =>
 // 缩略图条用: 直接拿 lib/thumb 拼 (不走 SingleImagePreview, 因为缩略图条是选择按钮, 不要 lightbox 也不要 cursor:zoom-in).
 function stripThumbUrl(idx: number): string {
   const a = props.polaroid.assets[idx]
-  return buildThumbUrl(props.polaroid.id, idx, a?.hash)
+  return buildThumbUrl(a.path, a?.hash)
 }
 
 function selectAsset(idx: number) {
@@ -66,19 +69,13 @@ function selectAsset(idx: number) {
       <NEmpty description="这张拍立得还没有资产" />
     </div>
 
-    <!-- Not yet saved: 有 assets 但 polaroid 未持久化,无法预览缩略图 -->
-    <div v-else-if="!canPreview" class="pip-empty">
-      <NEmpty description="保存拍立得后可查看图片" />
-    </div>
-
     <!-- Album view: 上面大图 + 下面缩略图条 -->
     <div v-else class="pip-album">
       <div class="pip-cover">
         <SingleImagePreview
-          :polaroid-id="polaroid.id"
-          :asset="currentAsset"
-          :asset-idx="safeIdx"
-          :caption="`${polaroid.id} · ${currentAsset?.role || `asset #${safeIdx}`}`"
+          :path="currentAsset?.path ?? null"
+          :hash="currentAsset?.hash"
+          :caption="currentAsset ? `${currentAsset.role || `asset #${safeIdx}`}` : ''"
         />
       </div>
 
