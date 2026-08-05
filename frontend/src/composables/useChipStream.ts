@@ -1,12 +1,16 @@
-// 标签流 composable: 管理一组 chip（添加 / 删除 / 自动补全 / 快捷）
-// 移植旧 bench.html 的 setupStream 行为
+// 标签流 composable: 管理一组 chip（添加 / 删除 / 自动补全）
+// 移植旧 bench.html 的 setupStream 行为, 当前被 PolaroidTagsEditor 内部两次实例化。
+//
 // 用法:
 //   const cs = useChipStream({ autoPrefix: 'char', allowFreeform: false, suggestions })
-//   cs.add('my_push')           // 添加
+//   cs.add('my_push')           // 添加 (autoPrefix='char' 时补为 char:my_push)
 //   cs.remove(tag)              // 删除
+//   cs.onInput()                // 输入后调用以重算 suggestItems
 //   v-model="cs.modelValue"     // 双向绑定 chip 列表
+//
+// 注意: 候选的弹出 UI 由 caller 用 NAutoComplete 包装, 本 composable 只暴露 suggestItems.
 
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 
 export interface ChipStreamOptions {
   /** 自动补全前缀（输入 "my_push" 时补为 "char:my_push"） */
@@ -21,7 +25,6 @@ export function useChipStream(opts: ChipStreamOptions) {
   const modelValue = ref<string[]>([])
 
   const query = ref('')
-  const showSuggest = ref(false)
   const suggestItems = ref<string[]>([])
 
   const filteredSuggestions = computed(() => {
@@ -42,7 +45,7 @@ export function useChipStream(opts: ChipStreamOptions) {
 
     modelValue.value = [...modelValue.value, tag]
     query.value = ''
-    showSuggest.value = false
+    suggestItems.value = []
     return true
   }
 
@@ -53,20 +56,13 @@ export function useChipStream(opts: ChipStreamOptions) {
   function onInput(): void {
     const q = query.value.trim().toLowerCase()
     if (!q) {
-      showSuggest.value = false
       suggestItems.value = []
       return
     }
-    const suggests = filteredSuggestions.value
+    suggestItems.value = filteredSuggestions.value
       .filter((s) => s.toLowerCase().includes(q))
       .filter((s) => !modelValue.value.includes(s))
       .slice(0, 8)
-    suggestItems.value = suggests
-    showSuggest.value = suggests.length > 0
-  }
-
-  function pickSuggest(tag: string): void {
-    addChip(tag)
   }
 
   /** 外部同步：把指定数组作为当前 chip 流 */
@@ -77,13 +73,11 @@ export function useChipStream(opts: ChipStreamOptions) {
   return {
     modelValue,
     query,
-    showSuggest,
     suggestItems,
     filteredSuggestions,
     addChip,
     removeChip,
     onInput,
-    pickSuggest,
     setTags,
   }
 }

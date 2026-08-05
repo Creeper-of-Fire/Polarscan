@@ -14,7 +14,7 @@
 -->
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { NCard, NInput, NButton, NTag, NSpace, NDivider } from 'naive-ui'
+import { NCard, NAutoComplete, NButton, NTag, NSpace } from 'naive-ui'
 import { useChipStream } from '@/composables/useChipStream'
 
 const props = defineProps<{
@@ -37,12 +37,10 @@ const charStream = useChipStream({
 const {
   modelValue: charTags,
   query: charQuery,
-  showSuggest: charShow,
   suggestItems: charItems,
   addChip: charAddChip,
   removeChip: charRemoveChip,
   onInput: charOnInput,
-  pickSuggest: charPickSuggest,
   setTags: charSetTags,
 } = charStream
 
@@ -55,12 +53,10 @@ const otherStream = useChipStream({
 const {
   modelValue: otherTags,
   query: otherQuery,
-  showSuggest: otherShow,
   suggestItems: otherItems,
   addChip: otherAddChip,
   removeChip: otherRemoveChip,
   onInput: otherOnInput,
-  pickSuggest: otherPickSuggest,
   setTags: otherSetTags,
 } = otherStream
 
@@ -109,19 +105,11 @@ function charRemove(tag: string) {
   charRemoveChip(tag)
   emitMerged()
 }
-function charPick(tag: string) {
-  charPickSuggest(tag)
-  emitMerged()
-}
 function otherAdd(raw: string) {
   if (otherAddChip(raw)) emitMerged()
 }
 function otherRemove(tag: string) {
   otherRemoveChip(tag)
-  emitMerged()
-}
-function otherPick(tag: string) {
-  otherPickSuggest(tag)
   emitMerged()
 }
 
@@ -141,6 +129,24 @@ const sigPool = computed(() =>
     .filter((s) => s.startsWith('sig:'))
     .map((s) => s.slice(4)),
 )
+
+// NAutoComplete options: 由 suggestItems 直接派生 (filterable=false, 过滤逻辑保留在 useChipStream)
+const charOptions = computed(() =>
+  charItems.value.map((s) => ({ label: s, value: s })),
+)
+const otherOptions = computed(() =>
+  otherItems.value.map((s) => ({ label: s, value: s })),
+)
+
+// NAutoComplete 输入时: 更新 query ref + 重算候选
+function onCharQueryInput(v: string) {
+  charQuery.value = v
+  charOnInput()
+}
+function onOtherQueryInput(v: string) {
+  otherQuery.value = v
+  otherOnInput()
+}
 </script>
 
 <template>
@@ -159,28 +165,20 @@ const sigPool = computed(() =>
         </NTag>
       </div>
       <NSpace style="margin-top: 8px">
-        <NInput
+        <NAutoComplete
           :value="charQuery"
+          :options="charOptions"
+          :filterable="false"
+          :default-active-first-option="false"
+          clearable
           placeholder="角色标识 (例: my_push)"
-          @input="(v: string) => { charQuery = v; charOnInput() }"
+          style="min-width: 320px"
+          @update:value="onCharQueryInput"
+          @select="(v: string) => charAdd(v)"
           @keyup.enter="charAdd(charQuery)"
         />
         <NButton @click="charAdd(charQuery)">+ 角色</NButton>
       </NSpace>
-      <div
-        v-if="charShow"
-        style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px"
-      >
-        <NButton
-          v-for="s in charItems"
-          :key="s"
-          size="small"
-          text
-          @click="charPick(s)"
-        >
-          {{ s }}
-        </NButton>
-      </div>
       <div v-if="charPool.length > 0" style="margin-top: 8px">
         <span style="color: #666; font-size: 12px">角色池:</span>
         <NButton
@@ -210,28 +208,20 @@ const sigPool = computed(() =>
         </NTag>
       </div>
       <NSpace style="margin-top: 8px">
-        <NInput
+        <NAutoComplete
           :value="otherQuery"
+          :options="otherOptions"
+          :filterable="false"
+          :default-active-first-option="false"
+          clearable
           placeholder="其他标签 (例: event:shenshan_3rd_om_cd, shot:pair)"
-          @input="(v: string) => { otherQuery = v; otherOnInput() }"
+          style="min-width: 360px"
+          @update:value="onOtherQueryInput"
+          @select="(v: string) => otherAdd(v)"
           @keyup.enter="otherAdd(otherQuery)"
         />
         <NButton @click="otherAdd(otherQuery)">+ 标签</NButton>
       </NSpace>
-      <div
-        v-if="otherShow"
-        style="margin-top: 4px; border: 1px solid #eee; padding: 4px; border-radius: 4px"
-      >
-        <NButton
-          v-for="s in otherItems"
-          :key="s"
-          size="small"
-          text
-          @click="otherPick(s)"
-        >
-          {{ s }}
-        </NButton>
-      </div>
       <div v-if="shotPool.length > 0 || sigPool.length > 0" style="margin-top: 8px">
         <span style="color: #666; font-size: 12px">shot / sig 池:</span>
         <NButton
