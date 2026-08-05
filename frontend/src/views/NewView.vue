@@ -2,27 +2,29 @@
   NewView: 新建拍立得
 
   数据流:
-    usePolaroidEditor(null)  → 空 polaroid + create action
-    useDropzone              → 拖入文件 → 自动填充 polaroid.assets
-    PolaroidImagePreview     → 预览 (空 polaroid 显示 empty state)
+    usePolaroidEditor()    → 极简空 polaroid (id='', assets=[]) + create action
+    useDropzone            → 拖入文件 → handleDropReady 追加到 polaroid.assets
+    AssetListEditor        → v-model 绑 polaroid.assets, 提供 role/captured_at/device 编辑
+    PolaroidImagePreview   → 预览 (assets 空 → empty state; id 空但 assets 有 → "资产已填入, 点创建后预览")
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NForm, NFormItem, NInput, NButton, NSpace, NAlert, NTag, useMessage,
+  NForm, NFormItem, NInput, NButton, NSpace, NTag, useMessage,
 } from 'naive-ui'
 import { polaroidsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
 import { parentDirName, parseFolderDateRange } from '@/composables/usePathParse'
 import type { Asset, DroppedFile } from '@/types'
+import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 
 const router = useRouter()
 const message = useMessage()
 
-// 编辑 session (create mode;pid 始终为 null,由 create() 推到 /bench/{newPid})
+// 编辑 session (create 模式; pid 由 create() 推到 /bench/{newPid})
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 const submitting = ref(false)
@@ -36,26 +38,38 @@ const dz = useDropzone({
   onReady: handleDropReady,
 })
 const { files, status, errorMsg, importable, handleDrop,
-  removeFile, reset, fileStatusLabel, firstCandidatePath } = dz
+  removeFile, reset, fileStatusLabel } = dz
 
-// ---------- 自动填表单 ----------
+// dropzone 完成: 把 importable 文件追加到 polaroid.assets
+// 每个 asset 都带 hash (dropzone 在浏览器侧用 blake2b 算) — 这是 PUT 入库必需的 invariant.
 function handleDropReady(_identifiedFiles: DroppedFile[]) {
-  const paths = importable.value.map((i) => i.path)
-  if (paths.length === 0) return
+  const newOnes = importable.value
+  if (newOnes.length === 0) return
 
-  // 追加到 polaroid.assets (尚未保存,所以还没 hash)
   const existing = new Set(polaroid.value.assets.map((a) => a.path))
-  const newAssets: Asset[] = paths
-    .filter((p) => !existing.has(p))
-    .map((p, i) => ({
-      role: defaultRoleFor(polaroid.value.assets.length + i),
-      path: p,
-    }))
+  // 用文件路径 → dropzone 文件对象 映射, 把 hash 注入到 asset
+  const fileByPath = new Map<string, DroppedFile>()
+  for (const f of files.value) {
+    const c = (f.identify.candidates || [])[0]
+    if (c?.path) fileByPath.set(c.path, f)
+  }
+
+  const newAssets: Asset[] = newOnes
+    .filter((i) => !existing.has(i.path))
+    .map((i, n) => {
+      const f = fileByPath.get(i.path)
+      return {
+        role: defaultRoleFor(polaroid.value.assets.length + n),
+        path: i.path,
+        // hash 由 dropzone JS 算出; PUT 后端信任这个值 (见 server.py PUT /polaroid/{pid})
+        hash: f?.hash || null,
+      }
+    })
   polaroid.value.assets = [...polaroid.value.assets, ...newAssets]
 
   // 从第一个新文件的路径推断 shot_date
   if (!polaroid.value.shot_date) {
-    for (const p of paths) {
+    for (const p of newOnes.map((i) => i.path)) {
       const dn = parentDirName(p)
       if (!dn) continue
       const r = parseFolderDateRange(dn)
@@ -100,26 +114,34 @@ function onNotesInput(v: string) {
   polaroid.value!.notes = v
 }
 
+// 清空按钮: dropzone 状态 + 已填入 polaroid.assets 一并清
+function resetAll() {
+  reset()                          // dropzone
+  polaroid.value.assets = []        // editor 同步
+  polaroid.value.id = ''
+  polaroid.value.shot_date = null
+  polaroid.value.tags = []
+  polaroid.value.notes = ''
+}
+
 // ---------- 提交 ----------
 async function submit() {
   if (polaroid.value.assets.length === 0) {
-    message.error('至少填一个资产路径')
+    message.error('至少填一个资产')
     return
   }
   if (!polaroid.value.id) await suggestId()
 
   submitting.value = true
   try {
-    const newPid = await editor.create({
-      pid: polaroid.value.id,
-      shot_date: polaroid.value.shot_date ?? undefined,
-      primary_char: primaryChar.value.trim() || undefined,
-      asset_paths: polaroid.value.assets.map((a) => a.path),
-      tags: polaroid.value.tags,
-      notes: polaroid.value.notes,
-    })
-    message.success(`已创建 ${newPid}`)
-    router.push(`/bench/${encodeURIComponent(newPid)}`)
+    const r = await editor.save(polaroid.value)
+    if (r.created) {
+      message.success(`已创建 ${r.pid}`)
+      router.push(`/bench/${encodeURIComponent(r.pid)}`)
+    } else {
+      // 已存在 (理论上 PID 不会撞, 但服务端校验说存在的话, 不跳转只提示)
+      message.success(`已更新 ${r.pid}`)
+    }
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e))
   } finally {
@@ -132,11 +154,12 @@ const charOptions = ref<string[]>([])
 ;(async () => {
   try {
     const list = await polaroidsApi.byTag('char')
-    // 从 polaroid id 提取 char (id 形如 2026-XX-XX_charname_hash)
+    // 从 polaroid id 提取 char (id 形如 2026-XX-XX_charname_hash; charname 现在允许中文等 Unicode)
     const chars = new Set<string>()
     for (const p of list) {
-      const m = p.id.match(/_([a-z0-9_\-]+)_[a-f0-9]{6}$/)
-      if (m) chars.add(m[1])
+      // \w + u flag 匹配 Unicode word 字符；过滤占位符 nochar/nostamp
+      const m = p.id.match(/_(\w+)_[a-f0-9]{6}$/u)
+      if (m && m[1] !== 'nochar' && m[1] !== 'nostamp') chars.add(m[1])
     }
     charOptions.value = [...chars]
   } catch {
@@ -153,6 +176,7 @@ const charOptions = ref<string[]>([])
     <section style="border: 2px dashed #ccc; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #fafafa">
       <div @dragover.prevent @drop.prevent="handleDrop">
         <p v-if="status === 'idle'">拖入文件到这里创建新拍立得（也可使用下方手动表单）</p>
+        <p v-else-if="status === 'candidates-checking'">candidates 检查中…</p>
         <p v-else-if="status === 'hashing'">算 hash 中…</p>
         <p v-else-if="status === 'identifying'">identify 中…</p>
         <p v-else-if="status === 'submitting'">提交中…</p>
@@ -172,22 +196,37 @@ const charOptions = ref<string[]>([])
           <NButton size="small" @click="removeFile(i)">×</NButton>
         </div>
         <div style="margin-top: 12px; color: #666; font-size: 12px">
-          已自动填入下方表单（{{ importable.length }} 个）。
-          <NButton size="small" @click="reset()">清空</NButton>
+          已添加 {{ importable.length }} 个文件到下方表单。
+          <NButton size="small" @click="resetAll()">清空全部</NButton>
         </div>
       </div>
     </section>
+
+    <!-- 资产表单 (AssetListEditor) -->
+    <NCard title="资产 (assets)" style="margin-bottom: 16px" content-style="padding: 16px">
+      <AssetListEditor
+        v-model="polaroid.assets"
+        :polaroid-id="polaroid.id"
+      />
+    </NCard>
 
     <!-- 预览 -->
     <div style="margin-bottom: 16px">
       <PolaroidImagePreview :polaroid="polaroid" :show-captions="true" />
     </div>
 
-    <!-- 表单 -->
+    <!-- 元数据表单 -->
     <NForm label-placement="top" style="max-width: 720px">
-      <NFormItem label="标识（id：shot_date + 首个 char + 6 位十六进制后缀）">
-        <NInput :value="polaroid.id" placeholder="自动派生" readonly />
-        <small style="color: #666">根据下面的拍摄日期与首个角色自动派生</small>
+      <NFormItem label="标识（id）">
+        <div style="display: flex; gap: 8px; align-items: center; width: 100%">
+          <NInput
+            v-model:value="polaroid.id"
+            placeholder="留空点右侧“自动派生”或手动输入（允许中文）"
+            style="flex: 1"
+          />
+          <NButton size="small" @click="suggestId">自动派生</NButton>
+        </div>
+        <small style="color: #666">默认根据拍摄日期与首个角色自动派生，可手动覆盖；id 写入 YAML 后即冻结</small>
       </NFormItem>
 
       <NFormItem label="拍摄日期（shot_date）">

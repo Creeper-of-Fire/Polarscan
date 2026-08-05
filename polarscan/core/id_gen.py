@@ -6,6 +6,8 @@
 - id 派生并写入 YAML 后即冻结，后续修改 `shot_date` 或 `char` 不会改变它。
 - 6 位十六进制后缀不做冲突重试；若发生冲突，由用户手动修改 YAML。
 - 除随机后缀外，派生逻辑是纯函数；相同输入可以生成不同 id。
+- 允许 Unicode 字母/数字（包括中文）。空白、标点、控制字符等替换为 `-`。
+- id 是用户在工作台手输可改的标识，因此仅做"清白"清洗，不做更严限制。
 """
 from __future__ import annotations
 
@@ -13,12 +15,17 @@ import re
 import secrets
 
 
-# id 允许使用的字符，采用短标识格式
-_ID_OK = re.compile(r"[^a-z0-9_\-]+")
+# id 允许的字符：Unicode 字母/数字 + 连字符 + 下划线。
+# re.UNICODE 让 \w 匹配中文等 Unicode 字符；其他字符（含空白、标点、路径分隔符）
+# 替换为 `-`，既保留可读性又避免破坏 YAML/URL。
+_ID_OK = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
 def _safe(s: str | None, fallback: str) -> str:
-    """清理用于 id 的字符串：转小写，仅保留字母、数字、连字符和下划线。"""
+    """清理用于 id 的字符串：转小写，仅保留 Unicode 字母/数字 + 连字符/下划线。
+
+    空白、标点、控制字符等替换为 `-`；中文/日文/韩文等 Unicode 字母直接保留。
+    """
     if not s:
         return fallback
     s = s.strip().lower()
@@ -37,6 +44,8 @@ def make_polaroid_id(
     示例：
         make_polaroid_id("2025-10-18", "strawberry")
             → '2025-10-18_strawberry_4a7b1c'
+        make_polaroid_id("2026-08-04", "中文名")
+            → '2026-08-04_中文名_4a7b1c'
         make_polaroid_id()
             → 'nostamp_nochar_9e3d2a'
     """
