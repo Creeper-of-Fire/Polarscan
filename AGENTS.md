@@ -10,9 +10,9 @@
 >
 > 1. **core 的设计意图**——为什么这么分
 > 2. **真正不可破坏的不变量**——改了会让现有数据崩的
-> 3. **当前演进中的工作**——已知 TODO / 已决定的方向
 >
-> 这三段都是**未来导向**——给下一次重构 / 加字段 / 改 schema 的 agent 看。
+> 这两段都是**未来导向**——给下一次重构 / 加字段 / 改 schema 的 agent 看。
+> 已完成的事在 commit message；待办的事在 issue tracker；不在这里。
 
 ## 一、Core 的设计意图
 
@@ -32,11 +32,9 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 - **业务字段进 dataclass schema**（人名 / 事件名 / 评分等）：被否决。一律塞进 `metadata` 字典透传，core 不解析其内部结构。
 - **core 引入数据库 / ORM / 复杂校验**：被否决。core 是单文件 YAML + 透传，保持极简。
 
-### 演进方向
+### 演进原则
 
-- `Polaroid` / `Asset` 都要加 `metadata: dict` 字段，透传任意 JSON。
-- 前端：用 JSON 编辑器编辑 `metadata`（不接受 core 解析或格式化）。
-- 字段以**硬编码 dataclass + metadata 透传**并存：稳定字段继续硬编码（id / shot_date / tags / assets / path / hash / role），任意字段走 metadata。
+任何字段调整都遵循：稳定字段硬编码进 dataclass schema，任意扩展字段一律走 metadata 字典透传。详见上文"已否决的设计"。
 
 ## 二、真正的不变量（改了会让现有数据崩）
 
@@ -51,13 +49,6 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 3. **缩略图文件名 = `{stem}_{hash[:6]}.jpg`，完全由 `asset.hash` 派生**。  
    缺 `hash` = 旧资产未迁移。改公式或短哈希长度会让 `.thumbs/` 集体失效。
    - 来源：`polarscan/core/index.py:thumb_filename`
-
-## 三、当前演进中的工作（已知 TODO）
-
-- [x] **删除 `Asset.captured_at` 字段**：日期属于 Polaroid 层级，不属于 Asset。改 `core/index.py` 删字段 + 调整 tests + `_bootstrap.py`。
-- [x] **`Polaroid` / `Asset` 增加 `metadata: dict = field(default_factory=dict)` 字段**：`to_dict` / `from_dict` 透传，core 不解析其内部结构。
-- [x] **前端 JSON 编辑器**：新建 `MetadataEditor.vue`，接入 `BenchView` / `NewView`。
-- [x] **从 `server.py` 移除缩略图命名公式的硬编码副本**：apps 改调 `polarscan.core.index.thumb_path_for`，与 `Asset.thumb_path` 共用同一来源。
 
 ## 不在本文件
 
