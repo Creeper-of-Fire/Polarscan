@@ -2,6 +2,7 @@
   "name": "polarscan-workspace",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "concurrently -k -n vite,fastapi -c cyan,magenta \"pnpm --filter frontend dev\" \"python -m apps.web.server\"",
     "build": "pnpm --filter frontend build",

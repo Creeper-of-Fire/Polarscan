@@ -1,5 +1,7 @@
 # Polarscan
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 拍立得扫描件元数据管理系统。核心架构：
 
 - 单一真值文件：数据目录中的 `_index.yaml`
@@ -170,3 +172,7 @@ GET 路由 `/`、`/list`、`/new`、`/bench/{pid}`、`/pool/{prefix}`、`/pool/{
 - 新增：`SingleImagePreview` (widget) / `PolaroidImagePreview` (feature) / `usePolaroidEditor` (composable)
 - 删除：`AssetModal` (资产元数据编辑由通用表单编辑器承担,后续迭代) / `apps/web/static/path-parse.js` (已迁到 `usePathParse.ts`) / `tests/test_path_parse.js`
 - 改造：`BenchView` / `NewView` / `ListView` 全部走新组件;`server.py` 移除 `/static` 挂载
+
+## License
+
+本项目以 [MIT License](./LICENSE) 发布。Copyright © 2026 火之蔓族。
