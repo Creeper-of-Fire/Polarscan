@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from apps.web.library_resolver import (
+from polarscan.core.library_resolver import (
     Candidate,
     Triple,
     identify_candidates,

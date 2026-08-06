@@ -8,6 +8,10 @@
 - 命中条件：name AND size AND mtime 三字段全等。
 - 不预设有"应跳过"的目录。drop 是用户主动行为，工具不该替用户决定
   "哪些不该被看到"。
+
+本模块历史位置 `apps/web/library_resolver.py`——纯算法无 web 特定逻辑，
+迁入 core 是为了配合 [library-root-semantics](../docs/spec/library-root-semantics.md)
+收口：实物层逻辑（library_root + 路径反查）由 core 统一封装。
 """
 from __future__ import annotations
 

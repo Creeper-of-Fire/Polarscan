@@ -147,7 +147,10 @@ class DropIdentifyTest(unittest.TestCase):
         # 替换 server 的 ps 实例 (e2e_test 同款做法)
         self.original_ps = server.ps
         server.ps = Polarscan(self.data_dir)
+        # find_candidates_by_path 每次从 yaml 读 library_root——
+        # 必须 save() 写 yaml 才能让 server 端调它时拿到正确值
         server.ps._data["library_root"] = str(self.library_root)
+        server.ps.save()
         # 已索引 polaroid: p_match 用 img_match 的 hash + path
         server.ps.upsert_polaroid(
             Polaroid(
@@ -288,7 +291,9 @@ class DropIdentifyTest(unittest.TestCase):
 
     def test_no_candidate_when_library_root_unset(self) -> None:
         """library_root 为 None → candidates 永远空."""
+        # find_candidates_by_path 从 yaml 读——必须 save() 才能让它看到 None
         server.ps._data["library_root"] = None
+        server.ps.save()
         r = _request(
             "POST",
             "/api/drop/identify",

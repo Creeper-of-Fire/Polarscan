@@ -53,16 +53,19 @@ class Polarscan:
         self._data: dict[str, Any] = read_index(self.data_dir)
         self._lock = threading.RLock()
 
-    # ---- yaml 字段直读 ----
+    # ---- 数据视图（只读） ----
     @property
-    def library_root(self) -> Optional[str]:
-        """返回 yaml 中 `library_root` 字段；未设置时返回 None。
+    def data(self) -> dict[str, Any]:
+        """返回 yaml 数据的浅拷贝——只读视图，用于 core facade 的只读访问。
 
-        这是 yaml schema 字段，不是派生数据——直接读 `_data`，无锁。
-        路径发现模块会读这个字段。
+        应用层通过此接口把内存数据传给 core 模块（如 `find_candidates_by_path`），
+        无需直接接触 `_data` 或任何具体 schema 字段（如 `library_root`）。
+
+        浅拷贝：嵌套结构（`polaroids[]`、`tags{}`）仍与原数据共享引用——
+        应用层应只读不改。返回新 dict 以避免顶层引用泄漏。
         """
-        v = self._data.get("library_root")
-        return str(v) if v else None
+        with self._lock:
+            return dict(self._data)
 
     # ---- 生命周期 ----
     def reload(self) -> None:

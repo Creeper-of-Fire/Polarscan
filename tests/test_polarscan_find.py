@@ -16,26 +16,8 @@ def _make_png(path: Path, color: str = "white") -> None:
     Image.new("RGB", (8, 8), color=color).save(path)
 
 
-class LibraryRootTest(unittest.TestCase):
-    """library_root property 直接读 yaml schema 字段。"""
-
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.data_dir = Path(self._tmp.name)
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def test_default_value(self) -> None:
-        """新 data_dir 没有 _index.yaml 时，library_root 默认为 data_dir 自身。"""
-        ps = Polarscan(self.data_dir)
-        self.assertEqual(ps.library_root, str(self.data_dir))
-
-    def test_reflects_yaml_field(self) -> None:
-        """reload 后 library_root 反映 yaml 内容。"""
-        ps = Polarscan(self.data_dir)
-        ps._data["library_root"] = r"F:\相册\偶活"
-        self.assertEqual(ps.library_root, r"F:\相册\偶活")
+# 注：library_root property 已删除（[library-root-semantics](../../docs/spec/library-root-semantics.md) 收口）。
+# 应用层不再直接读 schema 字段——路径反查走 core/find_candidates.py:find_candidates_by_path。
 
 
 class FindByHashTest(unittest.TestCase):

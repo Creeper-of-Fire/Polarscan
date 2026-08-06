@@ -24,8 +24,9 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from apps.web.library_resolver import Triple, identify_candidates
 from polarscan.api import Polarscan
+from polarscan.core.find_candidates import find_candidates_by_path
+from polarscan.core.library_resolver import Triple
 
 
 logger = logging.getLogger("polarscan.web")
@@ -299,12 +300,13 @@ def reload_endpoint():
 # - PUT 仍无副作用: 服务端只在 GET 时按需生成 thumb (单次 F: 盘 IO).
 # ============================================================
 from polarscan.core.asset_thumb import (
-    LONG_EDGE,
-    QUALITY,
     SHORT_HASH_LEN,
-    make_thumb_image,
 )
-from polarscan.core.index import thumb_path_for as core_thumb_path_for
+from polarscan.core.cold import (
+    make_thumb_if_missing,
+    open_full as cold_open_full,
+)
+
 
 
 @app.get("/thumb")
@@ -313,29 +315,32 @@ def thumb_by_path(path: str, hash: str):
 
     - 缩略图路径由 `polarscan.core.index.thumb_path_for` 派生——单源真值,
       与 `Asset.thumb_path` 共用, 不在此硬编码命名公式.
-    - thumb 已存在 → 直接返回 (无 IO).
-    - thumb 不存在 + 源文件存在 → 生成一次 (单次 F: 盘 IO, 之后缓存命中).
+    - thumb 已存在 → 直接返回 (零 IO).
+    - thumb 不存在 + 源文件存在 → 经 cold gate 单次冷盘读生成 (之后缓存命中).
     - thumb 不存在 + 源文件不存在 → 404.
+
+    冷盘接触全部经 `cold.make_thumb_if_missing`——本路由内不允许 `Image.open(path)`.
     """
     if not hash or len(hash) < SHORT_HASH_LEN:
         raise HTTPException(400, f"hash 必须至少 {SHORT_HASH_LEN} 字符")
-    src = Path(path)
-    if not src.exists():
-        raise HTTPException(404, f"源文件不存在: {path}")
-    tp = core_thumb_path_for(DATA_DIR, path, hash)
-    if tp is None:
-        # thumb_path_for 在 hash 缺失/太短时返回 None — 已经被前置校验覆盖.
-        raise HTTPException(400, "无法派生缩略图路径")
-    return FileResponse(make_thumb_image(src, tp))
+    tp = make_thumb_if_missing(DATA_DIR, path, hash)
+    if tp is None or not tp.exists():
+        # cold gate 在 hash 缺失/太短 或 src 缺失时返回 None
+        raise HTTPException(404, f"无法生成缩略图: path={path}")
+    return FileResponse(tp)
 
 
 @app.get("/img")
 def img_by_path(path: str):
-    """统一原图入口: by path. 仅 lightbox 点击时调用, 按需读 F: 盘."""
+    """统一原图入口: by path. 仅 lightbox 点击时调用.
+
+    冷盘接触经 `cold.open_full`（流式句柄，扫描大图 + NAS 友好）——本路由内
+    不允许 `Path(src).read_bytes()` 或 `open(src, 'rb')` 等裸 IO.
+    """
     src = Path(path)
     if not src.exists():
         raise HTTPException(404, f"源文件不存在: {path}")
-    return FileResponse(src)
+    return StreamingResponse(cold_open_full(src), media_type="image/png")
 
 
 # ============================================================
@@ -361,28 +366,28 @@ async def api_drop_identify(request: Request):
         by_hash.append({"pid": hit_pid, "asset_idx": idx})
 
     candidates: list[dict] = []
-    library_root = ps.library_root
-    if library_root:
-        qt = Triple(
-            name=name,
-            size=int(size),
-            mtime=round(last_modified_ms / 1000.0),
-        )
-        result = identify_candidates(library_root, [qt])
-        for cand in result.get(qt, []):
-            path_str = str(cand.path)
-            in_yaml_hits = ps.find_by_path(path_str)
-            in_yaml_pid = in_yaml_hits[0][0] if in_yaml_hits else None
-            candidates.append({
-                "path": path_str,
-                "in_yaml_pid": in_yaml_pid,
-                # 完整命中位置列表 (pid + asset_idx) - 用于前端 force-add dialog
-                # in_yaml_pid 保留为兼容字段 (例如老版测试 / 第三方脚本)
-                "in_yaml_hits": [
-                    {"pid": hit_pid, "asset_idx": hit_idx}
-                    for hit_pid, hit_idx in in_yaml_hits
-                ],
-            })
+    qt = Triple(
+        name=name,
+        size=int(size),
+        mtime=round(last_modified_ms / 1000.0),
+    )
+    # find_candidates_by_path 从 ps.data 提取 library_root——应用层不直接接触 schema 字段
+    # library_root 缺失时返回空结果集（不抛错）—— drop 工作流优雅降级
+    result = find_candidates_by_path(ps.data, [qt])
+    for cand in result.get(qt, []):
+        path_str = str(cand.path)
+        in_yaml_hits = ps.find_by_path(path_str)
+        in_yaml_pid = in_yaml_hits[0][0] if in_yaml_hits else None
+        candidates.append({
+            "path": path_str,
+            "in_yaml_pid": in_yaml_pid,
+            # 完整命中位置列表 (pid + asset_idx) - 用于前端 force-add dialog
+            # in_yaml_pid 保留为兼容字段 (例如老版测试 / 第三方脚本)
+            "in_yaml_hits": [
+                {"pid": hit_pid, "asset_idx": hit_idx}
+                for hit_pid, hit_idx in in_yaml_hits
+            ],
+        })
 
     return {"by_hash": by_hash, "candidates": candidates}
 
