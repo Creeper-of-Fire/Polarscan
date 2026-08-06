@@ -1,87 +1,119 @@
-// Polarscan 全局 store: 全表 polaroids 缓存、当前选中、标签候选
-// 替代旧 bench.html → list.html 的 localStorage 跨页通信
+// Polarscan store: 全局缓存 + 写操作的单一入口。
+//
+// 设计原则:
+// - 所有对底层(server / _index.yaml)的修改都经由此 store 的 action, 不绕道.
+// - summaries 等缓存由 action 内部维护一致性, 调用方无感.
+// - refreshSummaries / refreshTagSuggestions 是 store 内部细节, 不 export,
+//   调用方永远不应该手动调"刷新".
+// - 视图层(views)只读 summaries / tagSuggestions, 改数据走 action.
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { polaroidsApi } from '@/api'
-import type { Polaroid, PolaroidSummary, TagSuggestion } from '@/types'
+import { ref } from 'vue'
+import { polaroidsApi, tagsApi } from '@/api'
+import type { Polaroid, PolaroidSummary } from '@/types'
+
+export interface SavePolaroidResult {
+  ok: boolean
+  pid: string
+  asset_count: number
+  created: boolean
+}
+
+export interface AppendFilesResult {
+  pid: string
+  asset_count: number
+}
 
 export const usePolarscanStore = defineStore('polarscan', () => {
-  // 全表 summary 缓存（list 页填，bench 页用）
+  // ===== state (公开读, 仅 action 内部写) =====
   const summaries = ref<PolaroidSummary[]>([])
   const summariesLoaded = ref(false)
+  const tagSuggestions = ref<string[]>([])
 
-  // 当前选中的 polaroid 详情
-  const current = ref<Polaroid | null>(null)
-  const currentId = ref<string | null>(null)
-
-  // 全部已用标签（bench 页 chip 流候选）
-  const tagSuggestions = ref<TagSuggestion[]>([])
-
-  const currentIdx = computed(() => {
-    if (!currentId.value) return -1
-    return summaries.value.findIndex((s) => s.id === currentId.value)
-  })
-
-  const prevId = computed(() => {
-    const i = currentIdx.value
-    return i > 0 ? summaries.value[i - 1].id : null
-  })
-
-  const nextId = computed(() => {
-    const i = currentIdx.value
-    return i >= 0 && i < summaries.value.length - 1 ? summaries.value[i + 1].id : null
-  })
-
-  const nextUntaggedId = computed(() => {
-    // 简单实现：返回第一张 tag 为空的 polaroid
-    const i = summaries.value.findIndex((s) => s.id === currentId.value)
-    for (let j = i + 1; j < summaries.value.length; j++) {
-      const summary = summaries.value[j]
-      // 注：summary 不含 tags，需要全表详情判断；这里只做基本 ID 传递
-      // 实际跳转逻辑由 bench 页 fetch /goto/untagged 完成
-      return summary.id
-    }
-    return null
-  })
-
-  async function ensureSummaries(): Promise<void> {
-    if (summariesLoaded.value) return
-    await refreshSummaries()
-  }
-
+  // ===== private: 缓存维护, 不 export =====
+  // 失败安全: refreshSummaries 抛错时 caller (action) 不会更新 summaries,
+  // 下次 listSummaries() 会基于 summariesLoaded=false 重新拉.
   async function refreshSummaries(): Promise<void> {
-    summaries.value = await polaroidsApi.list()
+    const list = await polaroidsApi.list()
+    summaries.value = list
     summariesLoaded.value = true
   }
 
-  async function loadPolaroid(pid: string): Promise<Polaroid> {
-    const p = await polaroidsApi.get(pid)
-    current.value = p
-    currentId.value = pid
-    // 同步更新全表中的 shot_date
-    const sum = summaries.value.find((s) => s.id === pid)
-    if (sum) sum.shot_date = p.shot_date ?? null
-    return p
+  async function refreshTagSuggestions(): Promise<void> {
+    const grouped = await tagsApi.all()
+    tagSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
   }
 
-  function patchCurrent(mutator: (p: Polaroid) => void): void {
-    if (!current.value) return
-    mutator(current.value)
+  // ===== actions (公开入口, 内部维护 cache) =====
+
+  /** 拉全表 summaries (首次拉, 之后返回 cache). */
+  async function listSummaries(): Promise<PolaroidSummary[]> {
+    if (!summariesLoaded.value) {
+      await refreshSummaries()
+    }
+    return summaries.value
+  }
+
+  /** 强制重拉全表 (用于 by-tag 切回 all 之类需要刷新 cache 的场景). */
+  async function reloadSummaries(): Promise<PolaroidSummary[]> {
+    await refreshSummaries()
+    return summaries.value
+  }
+
+  /** 按 tag 过滤拉取, 覆盖 cache. 与 listSummaries 互斥 (最后一次调用为准). */
+  async function listSummariesByTag(tag: string): Promise<PolaroidSummary[]> {
+    const list = await polaroidsApi.byTag(tag)
+    summaries.value = list
+    summariesLoaded.value = true
+    return list
+  }
+
+  /** 拉 tag 候选. 首次拉, 之后返回 cache. */
+  async function listAllTags(): Promise<string[]> {
+    if (tagSuggestions.value.length === 0) {
+      await refreshTagSuggestions()
+    }
+    return tagSuggestions.value
+  }
+
+  /** 拉单个 polaroid 详情. 不进 cache (详情走 editor 自己的 ref). */
+  async function loadPolaroid(pid: string): Promise<Polaroid> {
+    return polaroidsApi.get(pid)
+  }
+
+  /** 幂等创建或替换 polaroid (PUT /polaroid/{pid}).
+   *  成功后才 refreshSummaries — 失败时 cache 不动, 用户可重试. */
+  async function savePolaroid(polaroid: Polaroid): Promise<SavePolaroidResult> {
+    const result = await polaroidsApi.save(polaroid)
+    await refreshSummaries()
+    return result
+  }
+
+  /** 追加文件到现有 polaroid. 成功后才 refresh. */
+  async function appendFiles(pid: string, paths: string[]): Promise<AppendFilesResult> {
+    const result = await polaroidsApi.appendFiles(pid, paths)
+    await refreshSummaries()
+    return result
+  }
+
+  /** 删除 polaroid. 成功后才 refresh. */
+  async function deletePolaroid(pid: string): Promise<void> {
+    await polaroidsApi.delete(pid)
+    await refreshSummaries()
   }
 
   return {
+    // state
     summaries,
     summariesLoaded,
-    current,
-    currentId,
     tagSuggestions,
-    currentIdx,
-    prevId,
-    nextId,
-    nextUntaggedId,
-    ensureSummaries,
-    refreshSummaries,
+    // actions
+    listSummaries,
+    reloadSummaries,
+    listSummariesByTag,
+    listAllTags,
     loadPolaroid,
-    patchCurrent,
+    savePolaroid,
+    appendFiles,
+    deletePolaroid,
   }
 })

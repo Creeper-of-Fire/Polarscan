@@ -35,22 +35,23 @@ const store = usePolarscanStore()
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 
-// mount: 加载 summaries + polaroid,设置 currentId(prev/next 立刻可用)
+// mount: 加载 summaries + polaroid (全部过 store)
 onMounted(async () => {
   await Promise.all([
-    store.ensureSummaries(),
+    store.listSummaries(),
     editor.load(props.pid),
+    loadSuggestions(),
   ])
-  store.currentId = props.pid
-  await loadSuggestions()
 })
 
-// 同组件路由切换(/bench/A → /bench/B):用 lifecycle hook 替代 watcher
+// 同组件路由切换(/bench/A → /bench/B):summaries 不重拉 (单组件生命周期内一份就够),
+// editor 重新拉详情, tag 候选同理.
 onBeforeRouteUpdate(async (to) => {
   const newPid = to.params.pid as string
-  store.currentId = newPid
-  await editor.load(newPid)
-  await loadSuggestions()
+  await Promise.all([
+    editor.load(newPid),
+    loadSuggestions(),
+  ])
 })
 
 // ---------- 标签候选 ----------
@@ -76,9 +77,10 @@ const { files: dzFiles, status: dzStatus, errorMsg: dzErrorMsg,
   fileStatusLabel: dzFileStatusLabel } = dz
 
 // ---------- 顶部导航 ----------
-const prevId = computed(() => store.prevId)
-const nextId = computed(() => store.nextId)
-const idx = computed(() => store.currentIdx)
+// 临时算: 基于 props.pid + store.summaries
+const idx = computed(() => store.summaries.findIndex((s) => s.id === props.pid))
+const prevId = computed(() => idx.value > 0 ? store.summaries[idx.value - 1].id : null)
+const nextId = computed(() => idx.value >= 0 && idx.value < store.summaries.length - 1 ? store.summaries[idx.value + 1].id : null)
 const total = computed(() => store.summaries.length)
 
 async function goto(direction: 'prev' | 'next' | 'untagged') {

@@ -119,24 +119,22 @@ AssetModal 已删除——编辑 asset 元数据(role / captured_at / device)由
 | GET | `/api/pool/{prefix}` | 标签池 |
 | GET | `/api/pool/{prefix}/{key}` | 单个标签详情 |
 | GET | `/api/suggest-id?shot_date=X&primary_char=Y` | 派生 id |
-| POST | `/bench/{pid}/autosave` (form) | 自动保存 tags / shot_date / notes |
-| POST | `/bench/{pid}/save-assets` (JSON) | 替换 assets 列表 |
-| POST | `/bench/{pid}/delete` (form) | 删除 polaroid |
-| POST | `/new` (form) | 创建 polaroid |
+| PUT | `/polaroid/{pid}` (JSON) | 幂等创建或整体替换 polaroid（含 assets）。`assets[].hash` 由前端 dropzone 在浏览器侧算好后传入，服务端不再读 F 盘重算。|
+| DELETE | `/polaroid/{pid}` | 删除 polaroid |
 | POST | `/pool/{prefix}/{key}/edit` (form) | 保存标签 |
 | POST | `/pool/{prefix}/{key}/delete` (form) | 删除标签 |
 | POST | `/reload` (form) | 从磁盘重载索引 |
 | POST | `/api/drop/identify` (JSON) | drop 工作流识别 |
-| POST | `/api/polaroids/{pid}/append-files` (JSON) | 追加资产 |
+| POST | `/api/polaroids/{pid}/append-files` (JSON) | 追加资产（服务端读 F 盘算 hash）|
 
 GET 路由 `/`、`/list`、`/new`、`/bench/{pid}`、`/pool/{prefix}`、`/pool/{prefix}/{key}/edit` 一律返回 SPA `index.html`，由 Vue Router 接管前端路由。
 
-资源路径：
+资源路径（统一 by-path，不依赖 polaroid 索引——拖入即可预览）：
 
 | Method | 路径 | 说明 |
 |--------|------|------|
-| GET | `/thumb/{pid}[/{asset_idx}]` | 缩略图 |
-| GET | `/img/{pid}[/{asset_idx}]` | 原图（仅主动访问时读 F 盘）|
+| GET | `/thumb?path=&hash=` | 缩略图；按需单次生成 |
+| GET | `/img?path=` | 原图（仅 lightbox 点击时按需读 F 盘）|
 
 ## 标签前缀约定
 

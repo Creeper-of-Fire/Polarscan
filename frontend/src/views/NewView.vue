@@ -165,13 +165,10 @@ async function submit() {
   submitting.value = true
   try {
     const r = await editor.save(polaroid.value)
-    if (r.created) {
-      message.success(`已创建 ${r.pid}`)
-      router.push(`/bench/${encodeURIComponent(r.pid)}`)
-    } else {
-      // 已存在 (理论上 PID 不会撞, 但服务端校验说存在的话, 不跳转只提示)
-      message.success(`已更新 ${r.pid}`)
-    }
+    // store.savePolaroid 成功后内部已 refresh summaries,
+    // router.push 后 BenchView mount 拉到的列表一定含新 polaroid — 无需手动 sync.
+    message.success(r.created ? `已创建 ${r.pid}` : `已更新 ${r.pid}`)
+    router.push(`/bench/${encodeURIComponent(r.pid)}`)
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e))
   } finally {

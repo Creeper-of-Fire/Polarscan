@@ -51,7 +51,12 @@ def read_index(library_root: str | Path) -> dict[str, Any]:
 
 
 def write_index(library_root: str | Path, data: dict[str, Any]) -> None:
-    """原子写入 `_index.yaml`：先写临时文件，再重命名替换。"""
+    """原子写入 `_index.yaml`：先写临时文件，再重命名替换。
+
+    `width=4096`：抑制 PyYAML 默认 80 字符的硬换行。资产路径 `F:\\相册\\...`
+    是长绝对路径，默认宽度会被强行折成多行，产生看起来像\"改了内容\"的 diff。
+    4096 是足以容纳最常见路径的\"实际不限宽度\"——不必再上调。
+    """
     path = Path(library_root) / INDEX_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".yaml.tmp")

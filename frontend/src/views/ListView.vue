@@ -9,7 +9,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NSpace, NCard, NInput, NButton } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
-import { polaroidsApi } from '@/api'
 import { shotDateHint } from '@/composables/usePathParse'
 import SingleImagePreview from '@/components/SingleImagePreview.vue'
 
@@ -21,7 +20,7 @@ const loading = ref(false)
 onMounted(async () => {
   loading.value = true
   try {
-    await store.refreshSummaries()
+    await store.listSummaries()
   } finally {
     loading.value = false
   }
@@ -36,14 +35,13 @@ const totalCount = computed(() => store.summaries.length)
 
 async function loadWithTag() {
   const tag = tagFilter.value.trim()
-  if (!tag) {
-    await store.refreshSummaries()
-    return
-  }
   loading.value = true
   try {
-    const list = await polaroidsApi.byTag(tag)
-    store.$patch({ summaries: list })
+    if (!tag) {
+      await store.reloadSummaries()
+    } else {
+      await store.listSummariesByTag(tag)
+    }
   } finally {
     loading.value = false
   }
@@ -67,7 +65,7 @@ function open(id: string) {
       <NInput v-model:value="tagFilter" placeholder="按 tag 过滤 (例: char:my_push)" clearable
               style="width: 320px" @keyup.enter="loadWithTag" />
       <NButton @click="loadWithTag">应用</NButton>
-      <NButton @click="() => { tagFilter = ''; store.refreshSummaries() }">清空</NButton>
+      <NButton @click="() => { tagFilter = ''; loadWithTag() }">清空</NButton>
     </NSpace>
 
     <NSpin :show="loading">
