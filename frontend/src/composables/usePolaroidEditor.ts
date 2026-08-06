@@ -145,5 +145,6 @@ function emptyPolaroid(): Polaroid {
     tags: [],
     notes: '',
     assets: [],
+    metadata: {},
   }
 }

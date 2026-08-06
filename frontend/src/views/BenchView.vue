@@ -22,6 +22,7 @@ import { assetsDateRange } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
+import MetadataEditor from '@/components/MetadataEditor.vue'
 import type { DroppedFile } from '@/types'
 
 const props = defineProps<{ pid: string }>()
@@ -129,6 +130,11 @@ function onShotDateInput(v: string) {
 
 function onNotesInput(v: string) {
   polaroid.value!.notes = v
+  scheduleSave()
+}
+
+function onMetadataChanged() {
+  // MetadataEditor v-model 已写入 polaroid.metadata; 这里只触发 debounced save
   scheduleSave()
 }
 
@@ -388,11 +394,19 @@ const saveStateColor = computed(() => {
             <NInput :value="polaroid.notes" type="textarea" :rows="6" @input="(v: string) => onNotesInput(v)" />
           </NCard>
 
+          <!-- 元数据 (任意 JSON 透传) -->
+          <div style="margin-top: 12px">
+            <MetadataEditor
+              v-model="polaroid.metadata"
+              @update:model-value="onMetadataChanged"
+            />
+          </div>
+
           <NSpace style="margin-top: 12px">
             <NButton type="error" ghost @click="confirmDelete">删除这张</NButton>
           </NSpace>
           <small style="display: block; margin-top: 8px; color: #999">
-            编辑资产 metadata(role / captured_at / device)等功能将由通用表单编辑器承担(后续迭代)。
+            编辑资产 metadata(role / device)等功能将由通用表单编辑器承担(后续迭代)。
           </small>
         </div>
       </div>

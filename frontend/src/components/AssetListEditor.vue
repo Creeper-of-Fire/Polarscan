@@ -85,14 +85,6 @@ function renderEmpty() {
               @update:value="(v: string) => updateAsset(idx, { role: v })"
             />
           </NFormItem>
-          <NFormItem label="拍摄时间 (captured_at)">
-            <NInput
-              :value="asset.captured_at ?? ''"
-              placeholder="ISO 8601 (例: 2026-08-04T10:00:00)"
-              style="min-width: 240px"
-              @update:value="(v: string) => updateAsset(idx, { captured_at: v || null })"
-            />
-          </NFormItem>
           <NFormItem label="设备 (device)">
             <NInput
               :value="asset.device ?? ''"

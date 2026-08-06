@@ -22,6 +22,7 @@ import type { Asset, DroppedFile } from '@/types'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
+import MetadataEditor from '@/components/MetadataEditor.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -138,6 +139,10 @@ function onNotesInput(v: string) {
   polaroid.value!.notes = v
 }
 
+function onMetadataChanged() {
+  // MetadataEditor v-model 已写入 polaroid.metadata; 这里不需要额外动作 (submit 时一起发)
+}
+
 // 清空按钮: dropzone 状态 + 已填入 polaroid 全部字段一并清
 function resetAll() {
   reset()                          // dropzone
@@ -146,6 +151,7 @@ function resetAll() {
   polaroid.value.shot_date = null
   polaroid.value.tags = []
   polaroid.value.notes = ''
+  polaroid.value.metadata = {}
 }
 
 // ---------- 提交 ----------
@@ -269,6 +275,13 @@ async function submit() {
         <NFormItem label="备注（notes）">
           <NInput :value="polaroid.notes" type="textarea" :rows="4"
                   @input="(v: string) => onNotesInput(v)" />
+        </NFormItem>
+
+        <NFormItem label="元数据 (metadata)">
+          <MetadataEditor
+            v-model="polaroid.metadata"
+            @update:model-value="onMetadataChanged"
+          />
         </NFormItem>
 
         <NSpace style="margin-top: 12px">

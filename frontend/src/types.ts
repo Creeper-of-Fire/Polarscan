@@ -2,10 +2,12 @@
 export interface Asset {
   role: string
   path: string
-  captured_at?: string | null
   device?: string | null
   /** 128 位十六进制 blake2b；首次写入前为空 (旧资产未迁移)。后端用 asdict 直出。 */
   hash?: string | null
+  /** 任意 JSON 透传字典：core 不解析内部结构, 由前端 MetadataEditor 直接编辑。
+   *  使用 `any` 而非 `unknown` 是因为 Pinia 的 _DeepPartial 无法 partial 顶层 unknown. */
+  metadata?: Record<string, any>
 }
 
 export interface Polaroid {
@@ -14,6 +16,8 @@ export interface Polaroid {
   tags: string[]
   notes: string
   assets: Asset[]
+  /** 任意 JSON 透传字典：core 不解析内部结构, 由前端 MetadataEditor 直接编辑。 */
+  metadata?: Record<string, any>
 }
 
 export interface PolaroidSummary {

@@ -54,10 +54,10 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 
 ## 三、当前演进中的工作（已知 TODO）
 
-- [ ] **删除 `Asset.captured_at` 字段**：现有 `_index.yaml` 无此字段数据，直接改 `polarscan/core/index.py` 删字段即可。
-- [ ] **`Polaroid` / `Asset` 增加 `metadata: dict = field(default_factory=dict)` 字段**：`to_dict` / `from_dict` 透传，core 不解析其内部结构。
-- [ ] **前端 JSON 编辑器**：编辑 `metadata`，与现有 `PolaroidTagsEditor` 风格保持一致（modal / 表单结构）。
-- [ ] **从 `server.py:325` 移除缩略图命名公式的硬编码副本**：当前 apps 又写了一份 `{stem}_{hash[:6]}.jpg`，违反"单源真值"——应改为调用 `core/index.py:thumb_filename`。
+- [x] **删除 `Asset.captured_at` 字段**：日期属于 Polaroid 层级，不属于 Asset。改 `core/index.py` 删字段 + 调整 tests + `_bootstrap.py`。
+- [x] **`Polaroid` / `Asset` 增加 `metadata: dict = field(default_factory=dict)` 字段**：`to_dict` / `from_dict` 透传，core 不解析其内部结构。
+- [x] **前端 JSON 编辑器**：新建 `MetadataEditor.vue`，接入 `BenchView` / `NewView`。
+- [x] **从 `server.py` 移除缩略图命名公式的硬编码副本**：apps 改调 `polarscan.core.index.thumb_path_for`，与 `Asset.thumb_path` 共用同一来源。
 
 ## 不在本文件
 
