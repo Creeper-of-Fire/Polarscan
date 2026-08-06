@@ -1,4 +1,5 @@
-"""数据模型：包含资产的 Polaroid，以及标签辅助函数。"""
+"""数据模型：包含资产的 Polaroid，以及标签辅助函数 + 缩略图命名。
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
@@ -6,10 +7,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .asset_thumb import (
-    THUMBS_DIRNAME,
-    SHORT_HASH_LEN,
+    THUMBS_DIRNAME,        # noqa: F401  兼容旧 import 路径
+    SHORT_HASH_LEN,        # noqa: F401
+    _thumb_filename,
+    thumb_path_for,
+)
+from .cold import (
     compute_hash,
-    make_thumb_image,
+    make_thumb_if_missing,
 )
 
 
@@ -46,14 +51,15 @@ class Asset:
         )
 
     # ------------------------------------------------------------------
-    # 工厂：计算哈希并创建资产实例
+    # 工厂：计算哈希并创建资产实例（走 cold gate）
     # ------------------------------------------------------------------
     @classmethod
     def from_path(cls, src: str | Path, role: str = "front",
                   device: Optional[str] = None) -> "Asset":
         """读取源文件并计算哈希，返回已填充 `hash` 字段的 Asset。
 
-        这是写入新资产的入口，只在创建时访问一次 F 盘。
+        `compute_hash` 是 cold gate 暴露的冷盘读出口；调用本身视为 explicit gesture。
+        这是写入新资产的入口，只在创建时访问一次冷盘。
         """
         return cls(
             role=role,
@@ -63,7 +69,7 @@ class Asset:
         )
 
     # ------------------------------------------------------------------
-    # 缩略图派生（不访问 F 盘）
+    # 缩略图派生（不读冷盘）
     # ------------------------------------------------------------------
     def thumb_filename(self) -> Optional[str]:
         """返回形如 `img20260728_17185555_a3b4c5.jpg` 的缩略图文件名。
@@ -85,19 +91,17 @@ class Asset:
 
     def ensure_thumb(self, data_dir: str | Path,
                      src_path: str | Path | None = None) -> Optional[Path]:
-        """生成缩略图文件，已存在时直接跳过；只在生成时访问一次 F 盘。
+        """按需生成缩略图，已存在时直接跳过（零冷盘读）；缺则调 cold gate。
 
         `src_path` 省略时使用 `self.path`；哈希或源文件缺失时返回 None。
         """
-        tp = self.thumb_path(data_dir)
-        if tp is None:
-            return None
-        if tp.exists():
-            return tp
-        src = Path(src_path or self.path)
-        if not src.exists():
-            return None
-        return make_thumb_image(src, tp)
+        # 把 cold gate 调用外包给模块函数：浏览时 thumb 命中是零冷盘读，
+        # 缺时 cold gate 会单次读冷盘——任何冷盘接触都在 cold gate 内部。
+        return make_thumb_if_missing(
+            data_dir=data_dir,
+            src_path=src_path or self.path,
+            hash=self.hash,
+        )
 
 
 @dataclass
@@ -151,28 +155,3 @@ def tag_value(tag: str) -> str:
     if ":" in tag:
         return tag.split(":", 1)[1]
     return tag
-
-
-# ============================================================
-# 缩略图命名（单源真值）
-# ============================================================
-def _thumb_filename(path: str | Path, hash: str) -> str:
-    """缩略图文件名公式：`{Path(path).stem}_{hash[:SHORT_HASH_LEN]}.jpg`。
-
-    所有缩略图派生都走这里——Asset / server / api 都不可硬编码公式。
-    """
-    return f"{Path(path).stem}_{hash[:SHORT_HASH_LEN]}.jpg"
-
-
-def thumb_path_for(
-    data_dir: str | Path,
-    path: str | Path,
-    hash: str | None,
-) -> Optional[Path]:
-    """根据 `(path, hash)` 派生缩略图完整路径；hash 缺失或太短返回 None。
-
-    纯路径计算，不访问 F 盘——已被 `Asset.thumb_path` 与 `apps/web/server.py:/thumb` 复用。
-    """
-    if not hash or len(hash) < SHORT_HASH_LEN:
-        return None
-    return Path(data_dir) / THUMBS_DIRNAME / _thumb_filename(path, hash)
