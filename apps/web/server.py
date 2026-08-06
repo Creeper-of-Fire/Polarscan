@@ -260,12 +260,18 @@ async def pool_edit_save(
     canonical_name: str = Form(""),
     aliases: str = Form(""),
     notes: str = Form(""),
+    color_name: str = Form(""),
+    color_rgb: str = Form(""),
     extra_json: str = Form(""),
 ):
     info = dict(ps.tag_info(prefix, key))
     info["canonical_name"] = canonical_name.strip()
     info["aliases"] = [a.strip() for a in aliases.split(",") if a.strip()]
     info["notes"] = notes.strip()
+    # 应援色 (硬编码字段, 与 canonical_name 同级; 空字符串视为清空)
+    info["color_name"] = color_name.strip()
+    rgb = color_rgb.strip()
+    info["color_rgb"] = rgb if _is_valid_hex_color(rgb) else ""
     if extra_json.strip():
         try:
             extras = json.loads(extra_json)
@@ -276,6 +282,13 @@ async def pool_edit_save(
     ps.set_tag_info(prefix, key, info)
     ps.save()
     return {"ok": True}
+
+
+def _is_valid_hex_color(s: str) -> bool:
+    """接受 #RRGGBB (六位 hex); 其它视为无效清空."""
+    if len(s) != 7 or not s.startswith("#"):
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in s[1:])
 
 
 @app.post("/pool/{prefix}/{key}/delete")

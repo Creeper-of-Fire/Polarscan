@@ -3,19 +3,22 @@
 
   职责:
   - v-model 双向绑定 tag 列表 (modelValue / update:modelValue)
-  - 自动拆分/合并 char 与 other (e.g. `char:my_push` vs `event:xxx`)
-  - 提供 chip 输入 + 候选补全 + 角色池快捷按钮
+  - **单源头**: charTags / otherTags 都从 props.modelValue 派生, 显示时按前缀过滤;
+    添加走 emit update:modelValue, 不维护内部副本, 因此不存在跨区重复 / 跨区跳位.
+  - chip 输入 + 候选补全 + 角色池快捷按钮
+  - 角色 chip 走 CharTag (RGB 色块 + 隐藏前缀 + hovertip + 点击跳转)
 
-  设计要点 (2026-08 重构):
-  - 归并自 BenchView 的两段 chip UI, NewView 也走同一份 (不再用 primaryChar 独立 ref).
-  - 内部用两个 useChipStream 实例 (autoPrefix='char' / freeform).
-  - 唯一的 watcher 用于 props.modelValue 变化时同步内部 streams (切换 polaroid 时必须).
-  - 用户操作 chip 走 emit merged, 不依赖 watcher 链.
+  设计要点 (2026-08 重构, B1+B2+应援色):
+  - 归并自 BenchView 的两段 chip UI, NewView 也走同一份
+  - 内部用两个 useChipStream 实例, 但仅用于 query + 候选, 不持有 modelValue
+  - 不再有 watcher / splitTags 双向同步; 数据归属 = props.modelValue
 -->
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { NCard, NAutoComplete, NButton, NTag, NSpace } from 'naive-ui'
 import { useChipStream } from '@/composables/useChipStream'
+import CharTag from './CharTag.vue'
 
 const props = defineProps<{
   /** 受控的完整 tags 列表 (v-model) */
@@ -28,117 +31,76 @@ const emit = defineEmits<{
   'update:modelValue': [tags: string[]]
 }>()
 
-// char 流: autoPrefix='char', 用户输入 'my_push' 自动补为 'char:my_push'
+const router = useRouter()
+
+// ---------- 单源头派生 ----------
+/** 严格判定: 'char:' 前缀才视为 char tag. 无冒号 legacy 落入 other (数据正确, 仅显示层). */
+function isCharTag(t: string): boolean {
+  return t.startsWith('char:')
+}
+const charTags = computed(() => props.modelValue.filter(isCharTag))
+const otherTags = computed(() => props.modelValue.filter((t) => !isCharTag(t)))
+
+// ---------- 候选流 (仅 query + 候选, 不持有 modelValue) ----------
 const charStream = useChipStream({
   autoPrefix: 'char',
   allowFreeform: false,
   suggestions: () => props.suggestions,
+  getSelected: () => props.modelValue,
 })
 const {
-  modelValue: charTags,
   query: charQuery,
   suggestItems: charItems,
-  addChip: charAddChip,
-  removeChip: charRemoveChip,
   onInput: charOnInput,
-  setTags: charSetTags,
+  clearQuery: charClearQuery,
 } = charStream
 
-// other 流: 自由格式, 用户输入完整 tag (e.g. 'event:shenshan_3rd_om_cd')
 const otherStream = useChipStream({
-  autoPrefix: '',
   allowFreeform: true,
   suggestions: () => props.suggestions,
+  getSelected: () => props.modelValue,
 })
 const {
-  modelValue: otherTags,
   query: otherQuery,
   suggestItems: otherItems,
-  addChip: otherAddChip,
-  removeChip: otherRemoveChip,
   onInput: otherOnInput,
-  setTags: otherSetTags,
+  clearQuery: otherClearQuery,
 } = otherStream
 
-/** 把完整 tags 列表拆分成 char / other (按前缀).
- *  规则:
- *  - char:xxx → char
- *  - 无冒号的纯文本 → char (历史遗留, 视为无名角色)
- *  - 其他带冒号 (event:..., shot:..., sig:...) → other */
-function splitTags(tags: string[]): { char: string[]; other: string[] } {
-  const cs: string[] = []
-  const os: string[] = []
-  for (const t of tags) {
-    if (t.startsWith('char:') || !t.includes(':')) cs.push(t)
-    else os.push(t)
-  }
-  return { char: cs, other: os }
-}
-
-function syncFromProps(next: string[]) {
-  const { char, other } = splitTags(next)
-  charSetTags(char)
-  otherSetTags(other)
-}
-
-/** 同步外部 modelValue 到内部 streams. 触发时机:
- *  - immediate: 初次挂载 (父组件 v-model 已传入值, 可能是空 polaroid)
- *  - watch: 父组件切换 polaroid / 外部修改 (e.g. load 完后)
- *  这是组件唯一允许的 watcher — props 是外部输入, 不能假设父组件会显式调用 setTags. */
-watch(
-  () => props.modelValue,
-  (next) => syncFromProps(next),
-  { immediate: true },
-)
-
-/** char/other chip 改动 → emit 合并后的 tags 给父组件 */
-function emitMerged() {
-  const merged = [...charTags.value, ...otherTags.value]
-  emit('update:modelValue', merged)
-}
-
-// 包装 useChipStream 的 add/remove, 让每次操作都触发 emit
+// ---------- add / remove → emit 新 union ----------
 function charAdd(raw: string) {
-  if (charAddChip(raw)) emitMerged()
+  const tag = charStream.computeTag(raw)
+  if (!tag) return
+  emit('update:modelValue', [...props.modelValue, tag])
+  charClearQuery()
 }
 function charRemove(tag: string) {
-  charRemoveChip(tag)
-  emitMerged()
+  emit('update:modelValue', props.modelValue.filter((t) => t !== tag))
 }
 function otherAdd(raw: string) {
-  if (otherAddChip(raw)) emitMerged()
+  const tag = otherStream.computeTag(raw)
+  if (!tag) return
+  emit('update:modelValue', [...props.modelValue, tag])
+  otherClearQuery()
 }
 function otherRemove(tag: string) {
-  otherRemoveChip(tag)
-  emitMerged()
+  emit('update:modelValue', props.modelValue.filter((t) => t !== tag))
 }
 
-// 角色池快捷按钮: 从 suggestions 提取已知 char 名的集合
+// ---------- 池子快捷按钮 ----------
 const charPool = computed(() =>
-  props.suggestions
-    .filter((s) => s.startsWith('char:'))
-    .map((s) => s.slice(5)),
+  props.suggestions.filter((s) => s.startsWith('char:')).map((s) => s.slice(5)),
 )
 const shotPool = computed(() =>
-  props.suggestions
-    .filter((s) => s.startsWith('shot:'))
-    .map((s) => s.slice(5)),
+  props.suggestions.filter((s) => s.startsWith('shot:')).map((s) => s.slice(5)),
 )
 const sigPool = computed(() =>
-  props.suggestions
-    .filter((s) => s.startsWith('sig:'))
-    .map((s) => s.slice(4)),
+  props.suggestions.filter((s) => s.startsWith('sig:')).map((s) => s.slice(4)),
 )
 
-// NAutoComplete options: 由 suggestItems 直接派生 (filterable=false, 过滤逻辑保留在 useChipStream)
-const charOptions = computed(() =>
-  charItems.value.map((s) => ({ label: s, value: s })),
-)
-const otherOptions = computed(() =>
-  otherItems.value.map((s) => ({ label: s, value: s })),
-)
+const charOptions = computed(() => charItems.value.map((s) => ({ label: s, value: s })))
+const otherOptions = computed(() => otherItems.value.map((s) => ({ label: s, value: s })))
 
-// NAutoComplete 输入时: 更新 query ref + 重算候选
 function onCharQueryInput(v: string) {
   charQuery.value = v
   charOnInput()
@@ -147,6 +109,11 @@ function onOtherQueryInput(v: string) {
   otherQuery.value = v
   otherOnInput()
 }
+
+// char chip 点击 → 跳转到该角色 pool 编辑页 (CharTag emit 的是 key, 已去前缀)
+function goChar(key: string) {
+  router.push(`/pool/char/${encodeURIComponent(key)}/edit`)
+}
 </script>
 
 <template>
@@ -154,15 +121,14 @@ function onOtherQueryInput(v: string) {
     <!-- 角色 (char) -->
     <NCard title="角色 (char)" size="small" style="margin-bottom: 12px">
       <div>
-        <NTag
+        <CharTag
           v-for="tag in charTags"
           :key="tag"
+          :tag="tag"
           closable
-          style="margin: 2px"
           @close="charRemove(tag)"
-        >
-          {{ tag }}
-        </NTag>
+          @click="goChar"
+        />
       </div>
       <NSpace style="margin-top: 8px">
         <NAutoComplete
@@ -181,15 +147,13 @@ function onOtherQueryInput(v: string) {
       </NSpace>
       <div v-if="charPool.length > 0" style="margin-top: 8px">
         <span style="color: #666; font-size: 12px">角色池:</span>
-        <NButton
+        <CharTag
           v-for="c in charPool.slice(0, 18)"
           :key="c"
-          size="small"
-          text
-          @click="charAdd(`char:${c}`)"
-        >
-          + {{ c }}
-        </NButton>
+          :tag="`char:${c}`"
+          interactive
+          @click="(k) => charAdd(`char:${k}`)"
+        />
       </div>
     </NCard>
 

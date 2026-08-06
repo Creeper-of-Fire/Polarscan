@@ -1,56 +1,65 @@
-// 标签流 composable: 管理一组 chip（添加 / 删除 / 自动补全）
-// 移植旧 bench.html 的 setupStream 行为, 当前被 PolaroidTagsEditor 内部两次实例化。
+// 标签流 composable: 仅负责 input + 候选补全 + 标签字符串推导。
+//
+// 设计原则 (2026-08 重构):
+// - **单源头**: tag 列表归 caller 所有 (例如 PolaroidTagsEditor.props.modelValue);
+//   composable 不再持有自己的 modelValue 副本, 因此不存在"两个 stream 各自去重"
+//   导致的跨区重复。dedup 走 getSelected() 统一在源头判断。
+// - **computeTag**: 给定 raw 输入返回最终写入的完整 tag (含前缀); 空/重复返回 null.
+//   caller 自己负责把结果追加到源头并 emit.
+// - 候选 popup UI 由 caller 用 NAutoComplete 包装, 本 composable 只暴露 suggestItems.
 //
 // 用法:
-//   const cs = useChipStream({ autoPrefix: 'char', allowFreeform: false, suggestions })
-//   cs.add('my_push')           // 添加 (autoPrefix='char' 时补为 char:my_push)
-//   cs.remove(tag)              // 删除
-//   cs.onInput()                // 输入后调用以重算 suggestItems
-//   v-model="cs.modelValue"     // 双向绑定 chip 列表
-//
-// 注意: 候选的弹出 UI 由 caller 用 NAutoComplete 包装, 本 composable 只暴露 suggestItems.
+//   const cs = useChipStream({
+//     autoPrefix: 'char',
+//     allowFreeform: false,
+//     suggestions: () => props.suggestions,
+//     getSelected: () => props.modelValue,
+//   })
+//   const tag = cs.computeTag('my_push')  // → 'char:my_push' | null
+//   cs.clearQuery()                       // 添加成功后清空输入 + 候选
+//   cs.onInput()                          // 输入时重算 suggestItems
 
 import { ref, computed } from 'vue'
 
 export interface ChipStreamOptions {
-  /** 自动补全前缀（输入 "my_push" 时补为 "char:my_push"） */
+  /** 自动补全前缀 (输入 'my_push' 时补为 'char:my_push') */
   autoPrefix?: string
-  /** 是否允许自由格式（无前缀） */
+  /** 是否允许自由格式 (无前缀). 设为 true 时: 输入必须带冒号, 否则返回 null. */
   allowFreeform?: boolean
-  /** 候选集（带前缀的 tag 全集，ref 或 getter） */
+  /** 候选集 (带前缀的 tag 全集) */
   suggestions: () => string[]
+  /** 当前已选 chip 列表 (单源头调用方传入). 用于 add dedup + onInput 过滤. */
+  getSelected: () => string[]
 }
 
 export function useChipStream(opts: ChipStreamOptions) {
-  const modelValue = ref<string[]>([])
-
   const query = ref('')
   const suggestItems = ref<string[]>([])
 
+  /** 候选前置过滤: char 模式只显示 char:* (或 legacy 无冒号); freeform 模式全显示. */
   const filteredSuggestions = computed(() => {
-    const prefix = opts.autoPrefix
     if (opts.allowFreeform) return opts.suggestions()
-    return opts.suggestions().filter((s) => s.startsWith(`${prefix}:`) || !s.includes(':'))
+    const prefix = opts.autoPrefix
+    return opts.suggestions().filter(
+      (s) => s.startsWith(`${prefix}:`) || !s.includes(':'),
+    )
   })
 
-  function addChip(raw: string): boolean {
+  /** 给定 raw 输入, 返回应当写入的完整 tag (含前缀); 空输入或重复返回 null. */
+  function computeTag(raw: string): string | null {
     const trimmed = (raw || '').trim()
-    if (!trimmed) return false
+    if (!trimmed) return null
 
     let tag = trimmed
     if (opts.autoPrefix && !tag.includes(':')) {
+      // char 模式: 无冒号自动补前缀
       tag = `${opts.autoPrefix}:${tag}`
+    } else if (opts.allowFreeform && !tag.includes(':')) {
+      // freeform 模式: 拒绝无前缀 (约定 tag 必须带 prefix)
+      return null
     }
-    if (modelValue.value.includes(tag)) return false
-
-    modelValue.value = [...modelValue.value, tag]
-    query.value = ''
-    suggestItems.value = []
-    return true
-  }
-
-  function removeChip(tag: string): void {
-    modelValue.value = modelValue.value.filter((t) => t !== tag)
+    if (opts.getSelected().includes(tag)) return null
+    return tag
   }
 
   function onInput(): void {
@@ -61,23 +70,21 @@ export function useChipStream(opts: ChipStreamOptions) {
     }
     suggestItems.value = filteredSuggestions.value
       .filter((s) => s.toLowerCase().includes(q))
-      .filter((s) => !modelValue.value.includes(s))
+      .filter((s) => !opts.getSelected().includes(s))
       .slice(0, 8)
   }
 
-  /** 外部同步：把指定数组作为当前 chip 流 */
-  function setTags(tags: string[]): void {
-    modelValue.value = [...tags]
+  function clearQuery(): void {
+    query.value = ''
+    suggestItems.value = []
   }
 
   return {
-    modelValue,
     query,
     suggestItems,
     filteredSuggestions,
-    addChip,
-    removeChip,
+    computeTag,
     onInput,
-    setTags,
+    clearQuery,
   }
 }

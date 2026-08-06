@@ -14,7 +14,7 @@ import { useRouter } from 'vue-router'
 import {
   NCard, NForm, NFormItem, NInput, NButton, NSpace, useMessage,
 } from 'naive-ui'
-import { tagsApi } from '@/api'
+import { usePolarscanStore } from '@/stores/polarscan'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
 import { assetsDateRange } from '@/composables/usePathParse'
@@ -26,28 +26,22 @@ import MetadataEditor from '@/components/MetadataEditor.vue'
 
 const router = useRouter()
 const message = useMessage()
+const store = usePolarscanStore()
 
 // 编辑 session (create 模式; pid 由 save() 推到 /bench/{newPid})
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 const submitting = ref(false)
 
-// ---------- 标签候选 (给 PolaroidTagsEditor) ----------
-const allSuggestions = ref<string[]>([])
+// ---------- 标签候选 (过 store 拿 cache; char 应援色由 CharTag 懒加载) ----------
 ;(async () => {
-  try {
-    const grouped = await tagsApi.all()
-    allSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
-  } catch {
-    allSuggestions.value = []
-  }
+  await store.listAllTags()
 })()
 
 // 派生 id 用: 取 polaroid.tags 里第一个 char tag 的 char 名
 const primaryCharForId = computed<string | null>(() => {
   for (const t of polaroid.value.tags) {
     if (t.startsWith('char:')) return t.slice(5)
-    if (!t.includes(':')) return t
   }
   return null
 })
@@ -261,7 +255,7 @@ async function submit() {
         <NFormItem label="标签 (tags)">
           <PolaroidTagsEditor
             v-model="polaroid.tags"
-            :suggestions="allSuggestions"
+            :suggestions="store.tagSuggestions"
             @update:model-value="onTagsChanged"
           />
           <small style="color: #666">

@@ -1,11 +1,13 @@
 // 后端 API 调用层：按业务域分组
 import { api } from './client'
-import type {
-  Asset,
-  IdentifyResult,
-  Polaroid,
-  PolaroidSummary,
-  PoolItem,
+import {
+  charOshiColorFromMeta,
+  type Asset,
+  type CharOshiColor,
+  type IdentifyResult,
+  type Polaroid,
+  type PolaroidSummary,
+  type PoolItem,
 } from '@/types'
 
 export const polaroidsApi = {
@@ -71,6 +73,10 @@ export const poolApi = {
       canonical_name?: string
       aliases?: string[]
       notes?: string
+      /** 应援色文字 (例: "黄色"). 空字符串视为清空. */
+      color_name?: string
+      /** 应援色 RGB (hex #RRGGBB). 空字符串视为清空. */
+      color_rgb?: string
       extra_json?: string
       return_to?: string
     },
@@ -81,6 +87,8 @@ export const poolApi = {
         canonical_name: fields.canonical_name,
         aliases: fields.aliases ? fields.aliases.join(', ') : undefined,
         notes: fields.notes,
+        color_name: fields.color_name,
+        color_rgb: fields.color_rgb,
         extra_json: fields.extra_json,
         return_to: fields.return_to,
       },
@@ -91,6 +99,16 @@ export const poolApi = {
       `/pool/${encodeURIComponent(prefix)}/${encodeURIComponent(key)}/delete`,
       {},
     )
+  },
+  /** 拉取指定 prefix 下所有条目的应援色映射 (key → 应援色). 走 /api/pool/{prefix} 全表后前端筛字段. */
+  async colorMap(prefix: string): Promise<Record<string, CharOshiColor>> {
+    const items = await api.get<PoolItem[]>(`/api/pool/${encodeURIComponent(prefix)}`)
+    const out: Record<string, CharOshiColor> = {}
+    for (const it of items) {
+      const c = charOshiColorFromMeta(it.meta as Record<string, unknown>)
+      if (c.name || c.rgb) out[it.key] = c
+    }
+    return out
   },
 }
 

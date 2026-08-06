@@ -1,18 +1,30 @@
+<!--
+  PoolEditView: 编辑单条 pool 元数据 (canonical_name + aliases + notes + 应援色)
+
+  应援色字段 (顶层, 与 canonical_name 同级):
+    color_name  str   文字描述 (例: "黄色")
+    color_rgb   str   #RRGGBB hex 字符串
+
+  core 不解析元数据内部结构, 这里走 backend 的"任意 JSON 透传"约定;
+  后端 /pool/.../edit 端点把 form 字段写入 meta 顶层 dict.
+-->
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   NSpin, NForm, NFormItem, NInput, NButton, NSpace, NDescriptions, NDescriptionsItem,
-  useMessage, useDialog,
+  NCard, NColorPicker, useMessage, useDialog,
 } from 'naive-ui'
 import { poolApi } from '@/api'
+import { usePolarscanStore } from '@/stores/polarscan'
 import type { PolaroidSummary } from '@/types'
 
-const props = defineProps<{ prefix: string; key: string }>()
+const props = defineProps<{ prefix: string; tagKey: string }>()
 const router = useRouter()
 const route = useRoute()
 const message = useMessage()
 const dialog = useDialog()
+const store = usePolarscanStore()
 
 const info = ref<Record<string, unknown>>({})
 const usedBy = ref<PolaroidSummary[]>([])
@@ -21,6 +33,8 @@ const loading = ref(false)
 const canonicalName = ref('')
 const aliasesText = ref('')
 const notes = ref('')
+const colorName = ref('')
+const colorRgb = ref('#d9d9d9')
 const extraJson = ref('')
 
 const returnTo = computed(() => (route.query.return_to as string) || `/pool/${props.prefix}`)
@@ -28,12 +42,15 @@ const returnTo = computed(() => (route.query.return_to as string) || `/pool/${pr
 onMounted(async () => {
   loading.value = true
   try {
-    const r = await poolApi.edit(props.prefix, props.key)
+    const r = await poolApi.edit(props.prefix, props.tagKey)
     info.value = r.info
     usedBy.value = r.used_by
     canonicalName.value = (r.info.canonical_name as string) || ''
     aliasesText.value = ((r.info.aliases as string[]) || []).join(', ')
     notes.value = (r.info.notes as string) || ''
+    colorName.value = (r.info.color_name as string) || ''
+    const rawRgb = (r.info.color_rgb as string) || ''
+    colorRgb.value = /^#[0-9a-fA-F]{6}$/.test(rawRgb) ? rawRgb : '#d9d9d9'
   } finally {
     loading.value = false
   }
@@ -41,15 +58,21 @@ onMounted(async () => {
 
 async function save() {
   const aliases = aliasesText.value.split(',').map((s) => s.trim()).filter(Boolean)
-  const r = await poolApi.save(props.prefix, props.key, {
+  const r = await poolApi.save(props.prefix, props.tagKey, {
     canonical_name: canonicalName.value,
     aliases,
     notes: notes.value,
+    color_name: colorName.value.trim(),
+    color_rgb: colorRgb.value,
     extra_json: extraJson.value,
     return_to: returnTo.value,
   })
   if (r.ok) {
     message.success('已保存')
+    // char 应援色变更后强制刷新缓存, 回到 BenchView 不会看到 stale 颜色
+    if (props.prefix === 'char') {
+      await store.refreshCharColorsForce()
+    }
     router.push(returnTo.value)
   } else {
     message.error('保存失败')
@@ -59,11 +82,15 @@ async function save() {
 async function deleteMeta() {
   dialog.warning({
     title: '从池中删除元数据',
-    content: `从池中删除 ${props.prefix}:${props.key} 的元数据？此操作不会移除拍立得上的标签。`,
+    content: `从池中删除 ${props.prefix}:${props.tagKey} 的元数据？此操作不会移除拍立得上的标签。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await poolApi.delete(props.prefix, props.key)
+      await poolApi.delete(props.prefix, props.tagKey)
+      // 同样刷新 char 颜色缓存 (万一删的是带颜色的 char)
+      if (props.prefix === 'char') {
+        await store.refreshCharColorsForce()
+      }
       message.success('已删除')
       router.push(`/pool/${props.prefix}`)
     },
@@ -71,14 +98,16 @@ async function deleteMeta() {
 }
 
 const extras = computed(() =>
-  Object.entries(info.value).filter(([k]) => !['canonical_name', 'aliases', 'notes'].includes(k)),
+  Object.entries(info.value).filter(
+    ([k]) => !['canonical_name', 'aliases', 'notes', 'color_name', 'color_rgb'].includes(k),
+  ),
 )
 </script>
 
 <template>
   <div>
     <h2 style="margin-top: 0">
-      编辑 <code>{{ prefix }}:{{ key }}</code>
+      编辑 <code>{{ prefix }}:{{ tagKey }}</code>
     </h2>
 
     <NSpin :show="loading">
@@ -96,6 +125,24 @@ const extras = computed(() =>
           <NFormItem label="规范名称（canonical_name）">
             <NInput v-model:value="canonicalName" placeholder="供界面显示，可留空" />
           </NFormItem>
+
+          <!-- 应援色 (硬编码字段, 文本 + RGB; 与 canonical_name 平级) -->
+          <NCard title="应援色 (oshi color)" size="small" style="margin-bottom: 16px">
+            <NSpace vertical>
+              <NFormItem label="颜色文字（color_name）" :show-feedback="false" style="margin-bottom: 0">
+                <NInput v-model:value="colorName" placeholder="例: 黄色 / 粉色" />
+              </NFormItem>
+              <NFormItem label="RGB (color_rgb)" :show-feedback="false" style="margin-bottom: 0">
+                <NColorPicker
+                  :value="colorRgb"
+                  :show-alpha="false"
+                  @update:value="(v: string) => colorRgb = v"
+                />
+                <code style="margin-left: 8px; color: #666">{{ colorRgb }}</code>
+              </NFormItem>
+            </NSpace>
+          </NCard>
+
           <NFormItem label="别名（aliases，逗号分隔）">
             <NInput v-model:value="aliasesText" placeholder="供搜索使用" />
           </NFormItem>

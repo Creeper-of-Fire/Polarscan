@@ -15,7 +15,7 @@ import {
   NSpin, NTag, NInput, NButton, NSpace, NCard, useMessage, useDialog,
 } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
-import { polaroidsApi, tagsApi } from '@/api'
+import { polaroidsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
 import { useDropzone } from '@/composables/useDropzone'
 import { assetsDateRange } from '@/composables/usePathParse'
@@ -35,35 +35,22 @@ const store = usePolarscanStore()
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 
-// mount: 加载 summaries + polaroid (全部过 store)
+// mount: 加载 summaries + polaroid + tag 候选 (全部过 store)
+// char 应援色由 CharTag 自己触发懒加载 (store.loadCharColors 内部 dedup)
 onMounted(async () => {
   await Promise.all([
     store.listSummaries(),
     editor.load(props.pid),
-    loadSuggestions(),
+    store.listAllTags(),
   ])
 })
 
 // 同组件路由切换(/bench/A → /bench/B):summaries 不重拉 (单组件生命周期内一份就够),
-// editor 重新拉详情, tag 候选同理.
+// editor 重新拉详情; tag 候选走 store cache 不重拉.
 onBeforeRouteUpdate(async (to) => {
   const newPid = to.params.pid as string
-  await Promise.all([
-    editor.load(newPid),
-    loadSuggestions(),
-  ])
+  await editor.load(newPid)
 })
-
-// ---------- 标签候选 ----------
-const allSuggestions = ref<string[]>([])
-async function loadSuggestions() {
-  try {
-    const grouped = await tagsApi.all()
-    allSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
-  } catch {
-    allSuggestions.value = []
-  }
-}
 
 // ---------- dropzone (追加) ----------
 const dz = useDropzone({ withThumb: false })
@@ -371,7 +358,7 @@ const saveStateColor = computed(() => {
           <div style="margin-top: 16px">
             <PolaroidTagsEditor
               v-model="polaroid.tags"
-              :suggestions="allSuggestions"
+              :suggestions="store.tagSuggestions"
               @update:model-value="onTagsChanged"
             />
           </div>

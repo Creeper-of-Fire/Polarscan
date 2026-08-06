@@ -37,6 +37,24 @@ export interface PoolItem {
   count: number
 }
 
+/** 角色应援色: 文字描述 + RGB 颜色. 任一字段缺失视为未设置 (走 neutral 灰). */
+export interface CharOshiColor {
+  name?: string
+  rgb?: string
+}
+
+/** 从 char 的 pool meta 抽取应援色. core 不解析, 这里只做约定字段读取. */
+export function charOshiColorFromMeta(meta: Record<string, unknown> | undefined | null): CharOshiColor {
+  if (!meta) return {}
+  const name = typeof meta.color_name === 'string' && meta.color_name.trim()
+    ? meta.color_name.trim()
+    : undefined
+  const rgb = typeof meta.color_rgb === 'string' && /^#[0-9a-fA-F]{6}$/.test(meta.color_rgb.trim())
+    ? meta.color_rgb.trim()
+    : undefined
+  return { name, rgb }
+}
+
 export interface TagSuggestion {
   prefix: string
   values: string[]

@@ -8,8 +8,8 @@
 // - 视图层(views)只读 summaries / tagSuggestions, 改数据走 action.
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { polaroidsApi, tagsApi } from '@/api'
-import type { Polaroid, PolaroidSummary } from '@/types'
+import { polaroidsApi, tagsApi, poolApi } from '@/api'
+import type { CharOshiColor, Polaroid, PolaroidSummary } from '@/types'
 
 export interface SavePolaroidResult {
   ok: boolean
@@ -30,6 +30,9 @@ export const usePolarscanStore = defineStore('polarscan', () => {
   const tagSuggestions = ref<string[]>([])
   // 分组字典 {prefix: [value, ...]}, ListView 按 prefix chip 切换时用
   const allTagGroups = ref<Record<string, string[]>>({})
+  // 角色应援色映射 (key → {name, rgb}); BenchView/NewView 的 CharTag 用
+  const charColors = ref<Record<string, CharOshiColor>>({})
+  const charColorsLoaded = ref(false)
 
   // ===== private: 缓存维护, 不 export =====
   // 失败安全: refreshSummaries 抛错时 caller (action) 不会更新 summaries,
@@ -44,6 +47,11 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     const grouped = await tagsApi.all()
     tagSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
     allTagGroups.value = grouped
+  }
+
+  async function refreshCharColors(): Promise<void> {
+    charColors.value = await poolApi.colorMap('char')
+    charColorsLoaded.value = true
   }
 
   // ===== actions (公开入口, 内部维护 cache) =====
@@ -86,6 +94,19 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     return allTagGroups.value
   }
 
+  /** 拉 char 应援色映射. 首次拉, 之后返回 cache. */
+  async function loadCharColors(): Promise<Record<string, CharOshiColor>> {
+    if (!charColorsLoaded.value) {
+      await refreshCharColors()
+    }
+    return charColors.value
+  }
+
+  /** 强制刷新 char 应援色 (PoolEditView 保存后调用, 避免 BenchView 看到 stale). */
+  async function refreshCharColorsForce(): Promise<void> {
+    await refreshCharColors()
+  }
+
   /** 拉单个 polaroid 详情. 不进 cache (详情走 editor 自己的 ref). */
   async function loadPolaroid(pid: string): Promise<Polaroid> {
     return polaroidsApi.get(pid)
@@ -118,12 +139,15 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     summariesLoaded,
     tagSuggestions,
     allTagGroups,
+    charColors,
     // actions
     listSummaries,
     reloadSummaries,
     listSummariesByTag,
     listAllTags,
     listAllTagGroups,
+    loadCharColors,
+    refreshCharColorsForce,
     loadPolaroid,
     savePolaroid,
     appendFiles,

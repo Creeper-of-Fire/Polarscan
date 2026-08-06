@@ -363,7 +363,7 @@ class WebEndToEndTest(unittest.TestCase):
         self.assertEqual(p.assets[0].metadata, {"rating": 4})
 
     def test_pool_edit(self) -> None:
-        """POST /pool/{prefix}/{key}/edit 保存标签元数据。"""
+        """POST /pool/{prefix}/{key}/edit 保存标签元数据 (含应援色字段)."""
         response = self.request(
             "POST",
             "/pool/char/hime/edit",
@@ -371,6 +371,8 @@ class WebEndToEndTest(unittest.TestCase):
                 "canonical_name": "姬",
                 "aliases": "hime, 小姬",
                 "notes": "角色别名测试",
+                "color_name": "粉色",
+                "color_rgb": "#FFB7C5",
                 "extra_json": "",
                 "return_to": "/pool/char",
             },
@@ -382,6 +384,25 @@ class WebEndToEndTest(unittest.TestCase):
         info = server.ps.tag_info("char", "hime")
         self.assertEqual(info["canonical_name"], "姬")
         self.assertEqual(info["aliases"], ["hime", "小姬"])
+        self.assertEqual(info["color_name"], "粉色")
+        self.assertEqual(info["color_rgb"], "#FFB7C5")
+
+        # 非法 RGB 被服务端丢弃 (清空), 不会爆掉
+        response = self.request(
+            "POST",
+            "/pool/char/hime/edit",
+            data={
+                "canonical_name": "姬",
+                "color_name": "",
+                "color_rgb": "not-a-hex",
+                "extra_json": "",
+                "return_to": "/pool/char",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        server.ps.reload()
+        info = server.ps.tag_info("char", "hime")
+        self.assertEqual(info.get("color_rgb"), "")
 
     def test_delete_polaroid(self) -> None:
         """DELETE /polaroid/{pid} 删除 polaroid。"""
