@@ -28,6 +28,8 @@ export const usePolarscanStore = defineStore('polarscan', () => {
   const summaries = ref<PolaroidSummary[]>([])
   const summariesLoaded = ref(false)
   const tagSuggestions = ref<string[]>([])
+  // 分组字典 {prefix: [value, ...]}, ListView 按 prefix chip 切换时用
+  const allTagGroups = ref<Record<string, string[]>>({})
 
   // ===== private: 缓存维护, 不 export =====
   // 失败安全: refreshSummaries 抛错时 caller (action) 不会更新 summaries,
@@ -41,6 +43,7 @@ export const usePolarscanStore = defineStore('polarscan', () => {
   async function refreshTagSuggestions(): Promise<void> {
     const grouped = await tagsApi.all()
     tagSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
+    allTagGroups.value = grouped
   }
 
   // ===== actions (公开入口, 内部维护 cache) =====
@@ -67,12 +70,20 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     return list
   }
 
-  /** 拉 tag 候选. 首次拉, 之后返回 cache. */
+  /** 拉 tag 候选 (扁平). 首次拉, 之后返回 cache. */
   async function listAllTags(): Promise<string[]> {
     if (tagSuggestions.value.length === 0) {
       await refreshTagSuggestions()
     }
     return tagSuggestions.value
+  }
+
+  /** 拉 tag 按 prefix 分组 (用于 ListView chip 切换). 首次拉, 之后返回 cache. */
+  async function listAllTagGroups(): Promise<Record<string, string[]>> {
+    if (Object.keys(allTagGroups.value).length === 0) {
+      await refreshTagSuggestions()
+    }
+    return allTagGroups.value
   }
 
   /** 拉单个 polaroid 详情. 不进 cache (详情走 editor 自己的 ref). */
@@ -106,11 +117,13 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     summaries,
     summariesLoaded,
     tagSuggestions,
+    allTagGroups,
     // actions
     listSummaries,
     reloadSummaries,
     listSummariesByTag,
     listAllTags,
+    listAllTagGroups,
     loadPolaroid,
     savePolaroid,
     appendFiles,

@@ -83,11 +83,14 @@ def _polaroid_summary(p) -> dict:
 
     含 cover_asset = assets[0] (或 None) - 给 ListView 的卡片显示缩略图用,
     后端拼 URL 模板是组件的事, 这里只给业务对象 (id + cover_asset.hash).
+    tags 字段供 ListView 客户端 chip 过滤 (AND) 使用 — 列表场景本就需要 tags,
+    补这一个字段不破坏现有 summary 的轻量性.
     """
     cover = p.assets[0] if p.assets else None
     return {
         "id": p.id,
         "shot_date": p.shot_date,
+        "tags": list(p.tags),
         "cover_asset": asdict(cover) if cover is not None else None,
     }
 
@@ -116,7 +119,6 @@ def api_polaroids(tag: Optional[str] = None):
     tag 形如 'char:my_push' 或 'shot:pair'。无冒号视为完整 tag 查询。
     """
     if tag:
-        # 优先按 query_by_tag 查整 tag
         return [_polaroid_summary(p) for p in ps.query_by_tag(tag)]
     return [_polaroid_summary(p) for p in ps.polaroids()]
 

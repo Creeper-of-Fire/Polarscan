@@ -23,6 +23,8 @@ export interface Polaroid {
 export interface PolaroidSummary {
   id: string
   shot_date: string | null
+  /** ListView 客户端 chip 过滤 (AND) 需要 tags；summary 也带这一份。 */
+  tags?: string[]
   /** 首张资产 (用于列表卡片显示);拍立得无资产时为 null。
    *  含 hash 字段, 给 SingleImagePreview 做 ?v= cache-bust 用, 不暴露给业务。
    */
