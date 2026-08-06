@@ -24,22 +24,25 @@ class Asset:
     它支持两项能力：
     - 直接由路径与哈希派生缩略图文件名 `{stem}_{hash[:6]}.jpg`，浏览时无需访问 F 盘。
     - 未来的离线路径修复工具可在原图根目录中重定位资产，再按哈希匹配并重写 YAML 路径。
+
+    `metadata` 是任意 JSON 的透传字典——core 不解析、不校验、不截断其内部结构。
+    业务字段（人名 / 事件名 / 评分 / 自定义键值）一律塞这里。
     """
 
     role: str
     path: str
-    captured_at: Optional[str] = None  # ISO 格式的日期时间字符串
     device: Optional[str] = None
     hash: Optional[str] = None  # 128 位十六进制 blake2b；首次写入前为空
+    metadata: dict[str, Any] = field(default_factory=dict)  # 任意 JSON 透传
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Asset":
         return cls(
             role=str(d.get("role", "front")),
             path=str(d["path"]),
-            captured_at=d.get("captured_at"),
             device=d.get("device"),
             hash=d.get("hash"),
+            metadata=d.get("metadata") or {},
         )
 
     # ------------------------------------------------------------------
@@ -47,7 +50,6 @@ class Asset:
     # ------------------------------------------------------------------
     @classmethod
     def from_path(cls, src: str | Path, role: str = "front",
-                  captured_at: Optional[str] = None,
                   device: Optional[str] = None) -> "Asset":
         """读取源文件并计算哈希，返回已填充 `hash` 字段的 Asset。
 
@@ -56,7 +58,6 @@ class Asset:
         return cls(
             role=role,
             path=str(src),
-            captured_at=captured_at,
             device=device,
             hash=compute_hash(src),
         )
@@ -71,15 +72,11 @@ class Asset:
         """
         if not self.hash:
             return None
-        stem = Path(self.path).stem
-        return f"{stem}_{self.hash[:SHORT_HASH_LEN]}.jpg"
+        return _thumb_filename(self.path, self.hash)
 
     def thumb_path(self, data_dir: str | Path) -> Optional[Path]:
         """返回 `data_dir/.thumbs/` 下的完整路径；哈希缺失时返回 None。"""
-        fn = self.thumb_filename()
-        if not fn:
-            return None
-        return Path(data_dir) / THUMBS_DIRNAME / fn
+        return thumb_path_for(data_dir, self.path, self.hash)
 
     def has_thumb(self, data_dir: str | Path) -> bool:
         """缩略图文件存在时返回 True；只检查 SSD，不访问 F 盘。"""
@@ -108,6 +105,9 @@ class Polaroid:
     """一张实体拍立得，可以包含一个或多个扫描资产。
 
     不可变的 `id` 是身份标识，其余字段均为元数据。
+
+    `metadata` 是任意 JSON 的透传字典——core 不解析、不校验、不截断其内部结构。
+    业务字段（人名 / 事件名 / 评分 / 自定义键值）一律塞这里。
     """
 
     id: str
@@ -115,6 +115,7 @@ class Polaroid:
     tags: list[str] = field(default_factory=list)
     notes: str = ""
     assets: list[Asset] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)  # 任意 JSON 透传
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Polaroid":
@@ -124,6 +125,7 @@ class Polaroid:
             tags=[str(t) for t in d.get("tags", [])],
             notes=str(d.get("notes", "")),
             assets=[Asset.from_dict(a) for a in d.get("assets", [])],
+            metadata=d.get("metadata") or {},
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -133,6 +135,7 @@ class Polaroid:
             "tags": list(self.tags),
             "notes": self.notes,
             "assets": [asdict(a) for a in self.assets],
+            "metadata": dict(self.metadata),
         }
 
 
@@ -148,3 +151,28 @@ def tag_value(tag: str) -> str:
     if ":" in tag:
         return tag.split(":", 1)[1]
     return tag
+
+
+# ============================================================
+# 缩略图命名（单源真值）
+# ============================================================
+def _thumb_filename(path: str | Path, hash: str) -> str:
+    """缩略图文件名公式：`{Path(path).stem}_{hash[:SHORT_HASH_LEN]}.jpg`。
+
+    所有缩略图派生都走这里——Asset / server / api 都不可硬编码公式。
+    """
+    return f"{Path(path).stem}_{hash[:SHORT_HASH_LEN]}.jpg"
+
+
+def thumb_path_for(
+    data_dir: str | Path,
+    path: str | Path,
+    hash: str | None,
+) -> Optional[Path]:
+    """根据 `(path, hash)` 派生缩略图完整路径；hash 缺失或太短返回 None。
+
+    纯路径计算，不访问 F 盘——已被 `Asset.thumb_path` 与 `apps/web/server.py:/thumb` 复用。
+    """
+    if not hash or len(hash) < SHORT_HASH_LEN:
+        return None
+    return Path(data_dir) / THUMBS_DIRNAME / _thumb_filename(path, hash)

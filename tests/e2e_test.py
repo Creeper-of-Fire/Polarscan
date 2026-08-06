@@ -224,7 +224,6 @@ class WebEndToEndTest(unittest.TestCase):
                     {
                         "role": "front",
                         "path": str(self.image_path),
-                        "captured_at": None,
                         "device": None,
                         "hash": blake2b_hex(self.image_path),
                     },
@@ -258,7 +257,6 @@ class WebEndToEndTest(unittest.TestCase):
                 {
                     "role": "front",
                     "path": str(self.image_path),
-                    "captured_at": None,
                     "device": None,
                     "hash": hash_now,
                 },
@@ -332,7 +330,7 @@ class WebEndToEndTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_save_assets_via_put(self) -> None:
-        """PUT 整体替换 polaroid, 改 asset role/captured_at (同时验证整体替换语义)."""
+        """PUT 整体替换 polaroid, 改 asset role/device/metadata (同时验证整体替换语义)."""
         hash_now = blake2b_hex(self.image_path)
         response = self.request(
             "PUT",
@@ -346,8 +344,8 @@ class WebEndToEndTest(unittest.TestCase):
                     {
                         "role": "back",  # 改了
                         "path": str(self.image_path),
-                        "captured_at": "2026-08-04T11:00:00",
-                        "device": None,
+                        "device": "scanner_x",
+                        "metadata": {"rating": 4},
                         "hash": hash_now,
                     },
                 ],
@@ -361,7 +359,8 @@ class WebEndToEndTest(unittest.TestCase):
         server.ps.reload()
         p = server.ps.polaroid("existing_001")
         self.assertEqual(p.assets[0].role, "back")
-        self.assertEqual(p.assets[0].captured_at, "2026-08-04T11:00:00")
+        self.assertEqual(p.assets[0].device, "scanner_x")
+        self.assertEqual(p.assets[0].metadata, {"rating": 4})
 
     def test_pool_edit(self) -> None:
         """POST /pool/{prefix}/{key}/edit 保存标签元数据。"""

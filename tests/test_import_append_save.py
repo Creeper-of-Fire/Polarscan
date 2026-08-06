@@ -193,7 +193,7 @@ class PutPolaroidTest(ImportTestBase):
         self.asset_a = Asset(
             role="front",
             path=str(self.img_a),
-            captured_at="2026-08-04T10:00:00",
+            device="scanner_x",
             hash=self.hash_a,
         )
         self.asset_b = Asset(role="back", path=str(self.img_b), hash=self.hash_b)
@@ -205,7 +205,7 @@ class PutPolaroidTest(ImportTestBase):
         server.ps.save()
 
     def test_updates_role_and_metadata(self) -> None:
-        """改 role / captured_at / device, 路径不变 → 成功 (整体替换, fields 都来自 PUT body)."""
+        """改 role / metadata / device, 路径不变 → 成功 (整体替换, fields 都来自 PUT body)."""
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",  # 保持
@@ -213,10 +213,11 @@ class PutPolaroidTest(ImportTestBase):
             "notes": "baseline",         # 保持
             "assets": [
                 {"role": "front_v2", "path": str(self.img_a),
-                 "captured_at": "2026-08-04T11:00:00", "device": "scanner_x",
+                 "device": "scanner_x",
+                 "metadata": {"rating": 5},
                  "hash": self.hash_a},
                 {"role": "back_signature", "path": str(self.img_b),
-                 "captured_at": None, "device": None,
+                 "device": None, "metadata": {},
                  "hash": self.hash_b},
             ],
         })
@@ -224,9 +225,10 @@ class PutPolaroidTest(ImportTestBase):
         p = server.ps.polaroid("p1")
         assert p is not None
         self.assertEqual(p.assets[0].role, "front_v2")
-        self.assertEqual(p.assets[0].captured_at, "2026-08-04T11:00:00")
         self.assertEqual(p.assets[0].device, "scanner_x")
+        self.assertEqual(p.assets[0].metadata, {"rating": 5})
         self.assertEqual(p.assets[1].role, "back_signature")
+        self.assertEqual(p.assets[1].metadata, {})
         # hash 信任 PUT body 提供
         self.assertEqual(p.assets[0].hash, self.hash_a)
         self.assertEqual(p.assets[1].hash, self.hash_b)

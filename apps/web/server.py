@@ -200,7 +200,7 @@ async def api_save_polaroid(pid: str, request: Request):
     """幂等创建或替换 polaroid.
 
     Body: 完整 polaroid JSON ({id, shot_date, tags, notes, assets[]}).
-    Assets 每项含 role/path/captured_at/device/hash; hash 必须 128 字符.
+    Assets 每项含 role/path/device/metadata/hash; hash 必须 128 字符.
 
     pid 不存在 → 创建; pid 存在 → 整体替换 (assets 也整体替换, 允许任意路径集合).
     """
@@ -301,17 +301,18 @@ def reload_endpoint():
 from polarscan.core.asset_thumb import (
     LONG_EDGE,
     QUALITY,
-    THUMBS_DIRNAME,
     SHORT_HASH_LEN,
     make_thumb_image,
 )
+from polarscan.core.index import thumb_path_for as core_thumb_path_for
 
 
 @app.get("/thumb")
 def thumb_by_path(path: str, hash: str):
     """统一缩略图入口: by (path, hash). 不依赖 polaroid 索引.
 
-    - hash (>= 6 字符) 派生 thumb filename: `{stem}_{hash[:6]}.jpg` 于 `data_dir/.thumbs/`.
+    - 缩略图路径由 `polarscan.core.index.thumb_path_for` 派生——单源真值,
+      与 `Asset.thumb_path` 共用, 不在此硬编码命名公式.
     - thumb 已存在 → 直接返回 (无 IO).
     - thumb 不存在 + 源文件存在 → 生成一次 (单次 F: 盘 IO, 之后缓存命中).
     - thumb 不存在 + 源文件不存在 → 404.
@@ -321,9 +322,11 @@ def thumb_by_path(path: str, hash: str):
     src = Path(path)
     if not src.exists():
         raise HTTPException(404, f"源文件不存在: {path}")
-    stem = src.stem
-    thumb_path = DATA_DIR / THUMBS_DIRNAME / f"{stem}_{hash[:SHORT_HASH_LEN]}.jpg"
-    return FileResponse(make_thumb_image(src, thumb_path))
+    tp = core_thumb_path_for(DATA_DIR, path, hash)
+    if tp is None:
+        # thumb_path_for 在 hash 缺失/太短时返回 None — 已经被前置校验覆盖.
+        raise HTTPException(400, "无法派生缩略图路径")
+    return FileResponse(make_thumb_image(src, tp))
 
 
 @app.get("/img")

@@ -348,7 +348,7 @@ class Polarscan:
         """原子替换 polaroid 的 assets 列表 (modal 编辑入口)。
 
         约束: new_assets 里的 path 集合必须 ⊆ 当前 polaroid 的 path 集合。
-        即只能改 role / captured_at / device, 不能增删 path。
+        即只能改 role / metadata / device, 不能增删 path。
         增删 path 走 import_from_files / append_files / 后续单独入口。
         """
         with self._lock:
@@ -378,9 +378,9 @@ class Polarscan:
                     Asset(
                         role=str(a_dict.get("role", "front")),
                         path=str(a_dict["path"]),
-                        captured_at=a_dict.get("captured_at"),
                         device=a_dict.get("device"),
                         hash=hash_by_path.get(str(a_dict["path"])),
+                        metadata=a_dict.get("metadata") or {},
                     )
                 )
             polaroid.assets = rebuilt
