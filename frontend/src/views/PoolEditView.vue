@@ -34,8 +34,25 @@ const canonicalName = ref('')
 const aliasesText = ref('')
 const notes = ref('')
 const colorName = ref('')
-const colorRgb = ref('#d9d9d9')
-const extraJson = ref('')
+// color_rgb 默认空字符串: 与 "是否定义应援色" 语义对齐 — 空 = 未设置.
+// 不 fallback 到中性灰, 否则用户进编辑页不主动改色直接保存, 会把中性灰写入后端.
+const colorRgb = ref('')
+
+// NColorPicker 在 value=空 时进入 "未设置" 特殊态, 重新选色可能输出 rgb()/rgba() 而非 #RRGGBB.
+// 后端 _is_valid_hex_color 只接受 #RRGGBB, 这里把任何格式归一到 #RRGGBB (大写).
+// 未知格式 → 保持原值不变, 避免破坏已有合法状态.
+function normalizeColorRgb(v: string): string {
+  if (v == null || v === '') return ''
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toUpperCase()
+  const m3 = v.match(/^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/)
+  if (m3) return ('#' + m3[1] + m3[1] + m3[2] + m3[2] + m3[3] + m3[3]).toUpperCase()
+  const mr = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
+  if (mr) {
+    const h = (n: string) => Number(n).toString(16).padStart(2, '0')
+    return ('#' + h(mr[1]) + h(mr[2]) + h(mr[3])).toUpperCase()
+  }
+  return colorRgb.value
+}
 
 const returnTo = computed(() => (route.query.return_to as string) || `/pool/${props.prefix}`)
 
@@ -50,7 +67,8 @@ onMounted(async () => {
     notes.value = (r.info.notes as string) || ''
     colorName.value = (r.info.color_name as string) || ''
     const rawRgb = (r.info.color_rgb as string) || ''
-    colorRgb.value = /^#[0-9a-fA-F]{6}$/.test(rawRgb) ? rawRgb : '#d9d9d9'
+    // 后端无值 / 非 hex 都归为空字符串 → NColorPicker 进入"未设置"态.
+    colorRgb.value = /^#[0-9a-fA-F]{6}$/.test(rawRgb) ? rawRgb : ''
   } finally {
     loading.value = false
   }
@@ -133,12 +151,25 @@ const extras = computed(() =>
                 <NInput v-model:value="colorName" placeholder="例: 黄色 / 粉色" />
               </NFormItem>
               <NFormItem label="RGB (color_rgb)" :show-feedback="false" style="margin-bottom: 0">
+                <!-- 裸 inline 排列: NColorPicker 在 NSpace 的 flex 容器里会被 min-width: 0 压扁,
+                     三个元素不必用 NSpace 这种抽象, 直接 inline-block + margin 控间距最稳. -->
+                <!-- modes=['hex'] 强制面板只显示 hex 输入; normalizeColorRgb 兜底把 rgb()/rgba()
+                     函数式输出归一到 #RRGGBB (Naive UI 在 value=空 选色时可能退化为 rgb()). -->
                 <NColorPicker
                   :value="colorRgb"
                   :show-alpha="false"
-                  @update:value="(v: string) => colorRgb = v"
+                  :modes="['hex']"
+                  @update:value="(v: string) => colorRgb = normalizeColorRgb(v)"
                 />
-                <code style="margin-left: 8px; color: #666">{{ colorRgb }}</code>
+                <code style="margin-left: 8px; color: #666">{{ colorRgb || '(未设置)' }}</code>
+                <NButton
+                  size="small"
+                  style="margin-left: 8px"
+                  :disabled="!colorRgb"
+                  @click="colorRgb = ''"
+                >
+                  清空
+                </NButton>
               </NFormItem>
             </NSpace>
           </NCard>
