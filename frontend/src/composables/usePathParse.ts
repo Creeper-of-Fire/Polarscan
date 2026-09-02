@@ -5,15 +5,20 @@
 //   "2026.07.25"            → 单日 { start: 2026-07-25, end: 2026-07-25 }
 //   "2026.07.25-26"         → 同月 2 日 { start: 2026-07-25, end: 2026-07-26 }
 //   "2026.02.28-03.01"      → 跨月   { start: 2026-02-28, end: 2026-03-01 }
+//   "2026.08.14&16"         → `&` 连接两天 (14 日 和 16 日)
 //   "2026-07-25"            → 单日 (. 也可换 -)
 //   "2026-07-25-26"         → 同月 2 日
 //   "2026-02-28-03-01"      → 跨月
-// 不接受: "2026.07.25-" (悬空), "2026.07.25-26.03" (半跨月)
+//   "2026-08-14&16"         → `&` 连接两天
+// 不接受: "2026.07.25-" (悬空), "2026.07.25-26.03" (半跨月),
+//         "2026.08.14&09.16" (`&` 后面只能跟 DD, 跨月请用 `-`)
 //
 // ⚠ 这是字符串解析,不是日期运算: "2026.02.28-29" 在平年会自动延到 3/1,此处严格解析后两者
 //   都没"日期范围",调用方按需扩展。
 
-const RANGE_RE = /^(\d{4})[\.\-](\d{1,2})[\.\-](\d{1,2})(?:-(?:(\d{1,2})(?:[\.\-](\d{1,2}))?))?$/
+// `&` 后只跟 DD (连接两天); 跨月仍走 `-MM.DD` 形式.
+// 单独 OR 分支, 不把分隔符泛化为 `[-&]`, 避免 `2026.08.14&09.16` 这类半跨月被接受.
+const RANGE_RE = /^(\d{4})[\.\-](\d{1,2})[\.\-](\d{1,2})(?:-(?:(\d{1,2})(?:[\.\-](\d{1,2}))?)|&(\d{1,2}))?$/
 const FN_DATE_RE = /^img(\d{4})(\d{2})(\d{2})_/i
 
 function pad2(n: number): string {
@@ -39,6 +44,8 @@ function toIso(year: string, month: number, day: number): string | null {
  * 返回 { start, end } 均为 YYYY-MM-DD,失败返回 null。
  *
  * 跨月场景: endMonth < startMonth 时 year 自动 +1 (例 2026.12.28-01.03 → end 2027-01-03).
+ *
+ * `&` (group 6): 连接两天. 跟 `-` 分支互斥, seg1/seg2 必空.
  */
 export function parseFolderDateRange(name: string): { start: string; end: string } | null {
   const m = RANGE_RE.exec(name)
@@ -49,9 +56,18 @@ export function parseFolderDateRange(name: string): { start: string; end: string
   const startIso = toIso(String(yearNum), startMonth, startDay)
   if (!startIso) return null
 
-  // m[4] = 第一段(单月: endDay; 跨月: endMonth); m[5] = 第二段(仅跨月使用: endDay)
+  // m[4] = `-` 分支第一段 (单月: endDay; 跨月: endMonth);
+  // m[5] = `-` 分支第二段 (仅跨月使用: endDay);
+  // m[6] = `&` 分支: 连接两天 (跟 m[4]/m[5] 互斥).
   const seg1 = m[4]
   const seg2 = m[5]
+  const ampSeg = m[6]
+  // `&` 连接两天 (ampSeg 单独出现, seg1/seg2 必为空)
+  if (ampSeg) {
+    const e = toIso(String(yearNum), startMonth, parseInt(ampSeg, 10))
+    if (!e) return null
+    return { start: startIso, end: e }
+  }
   // 单日
   if (!seg1 && !seg2) return { start: startIso, end: startIso }
   // 跨月: YYYY.MM.DD-MM.DD
