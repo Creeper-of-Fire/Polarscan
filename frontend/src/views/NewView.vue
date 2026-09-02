@@ -87,10 +87,13 @@ function handleDropReady(_identifiedFiles: DroppedFile[]) {
     })
   polaroid.value.assets = [...polaroid.value.assets, ...newAssets]
 
-  // 从当前全部 assets 路径推断拍立得范围的"第一天"作为 shot_date hint (留空时不强行覆盖)
+  // 从当前全部 assets 路径推断拍立得范围的"第一天"作为 shot_date hint:
+  //   - 0 个候选 → 不填入 (空)
+  //   - 1 个候选 → 自动填入 (用户没歧义)
+  //   - ≥2 个候选 → 保持空,让用户从候选按钮里点选 (避免猜错日期段)
   if (!polaroid.value.shot_date) {
     const all = assetsDateRange(polaroid.value.assets)
-    if (all.length > 0) polaroid.value.shot_date = all[0]
+    if (all.length === 1) polaroid.value.shot_date = all[0]
   }
   // 触发派生 id
   suggestId()
