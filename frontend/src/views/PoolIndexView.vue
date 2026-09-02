@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, h } from 'vue'
+import { ref, computed, h, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NDataTable, NTag, NButton, NSpace } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -12,14 +12,20 @@ const router = useRouter()
 const items = ref<PoolItem[]>([])
 const loading = ref(false)
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    items.value = await poolApi.index(props.prefix)
-  } finally {
-    loading.value = false
-  }
-})
+// 自然派生: prefix 变 → items 自动重拉. 不依赖 onMounted 单次副作用,
+// 否则跨 /pool/char → /pool/event 时组件复用不刷新.
+watch(
+  () => props.prefix,
+  async (p) => {
+    loading.value = true
+    try {
+      items.value = await poolApi.index(p)
+    } finally {
+      loading.value = false
+    }
+  },
+  { immediate: true },
+)
 
 const columns = computed<DataTableColumns<PoolItem>>(() => [
   { title: '键', key: 'key', width: 180, render: (row) => row.key },
