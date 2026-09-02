@@ -1,7 +1,7 @@
 // useCharDisplay: char tag 的展示字段派生 (canonical_name / aliases / color_*).
 //
 // 职责 (单一职责):
-// - 接收一个完整 char tag (如 'char:hime') 或其 ref/getter, 返回响应式
+// - 接收一个完整 char tag (如 'char:小薰') 或其 ref/getter, 返回响应式
 //   CharDisplay 对象 (key / canonical_name / aliases / color_rgb / color_name).
 // - 懒加载触发: 首次渲染时调 store.loadCharMeta(); store 内部 dedup,
 //   多次调用不重复请求.

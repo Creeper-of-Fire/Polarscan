@@ -56,7 +56,7 @@ import CharTag from './CharTag.vue'
 const props = defineProps<{
   /** 受控的完整 tags 列表 (v-model) */
   modelValue: string[]
-  /** 候选集 (带前缀的 tag 全集, 如 ['char:strawberry', 'shot:pair', ...]) */
+  /** 候选集 (带前缀的 tag 全集, 如 ['char:小薰', 'shot:pair', ...]) */
   suggestions: string[]
 }>()
 
@@ -319,7 +319,7 @@ function goChar(key: string) {
           :filterable="false"
           :default-active-first-option="false"
           clearable
-          placeholder="角色标识 (例: my_push)"
+          placeholder="角色标识 (例: 北北鱼)"
           style="min-width: 320px"
           @update:value="onCharQueryInput"
           @select="(v: string) => charAdd(v)"
@@ -360,7 +360,7 @@ function goChar(key: string) {
           :filterable="false"
           :default-active-first-option="false"
           clearable
-          placeholder="其他标签 (例: event:shenshan_3rd_om_cd, shot:pair)"
+          placeholder="其他标签 (例: event:ayako_birthday_3rd_om_cd, shot:pair)"
           style="min-width: 360px"
           @update:value="onOtherQueryInput"
           @select="(v: string) => otherAdd(v)"

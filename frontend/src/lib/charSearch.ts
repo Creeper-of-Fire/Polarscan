@@ -1,9 +1,9 @@
 // charSearch: char tag 的搜索加权.
 //
 // 候选字段:
-//   - key              (去掉前缀的标识, e.g. 'hime')
-//   - canonical_name   (规范名, e.g. '姬')
-//   - aliases          (别名数组, e.g. ['hime', '小姬'])
+//   - key              (去掉前缀的标识, e.g. '小薰')
+//   - canonical_name   (规范名, e.g. '小薰Ayako')
+//   - aliases          (别名数组, e.g. ['小薰', 'Ayako'])
 //
 // 加权原则 (用户视角: "匹配越多越相关"):
 // - 每字段独立打基础分 (key > canonical > alias, 完全 > 前缀 > 包含).

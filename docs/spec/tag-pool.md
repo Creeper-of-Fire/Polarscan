@@ -34,14 +34,14 @@
 ```yaml
 tags:
   char:
-    hime:
-      canonical_name: "姬"
-      aliases: ["hime", "小姬"]
+    小薰:
+      canonical_name: "小薰Ayako"
+      aliases: ["小薰", "Ayako"]
       notes: "角色别名测试"
-      color_name: "粉色"          # 应援色: 文字
-      color_rgb: "#FFB7C5"        # 应援色: RGB (#RRGGBB)
-    strawberry:
-      canonical_name: "草莓"
+      color_name: "红色"          # 应援色: 文字
+      color_rgb: "#E41111"        # 应援色: RGB (#RRGGBB)
+    北北鱼:
+      canonical_name: "北北鱼Honomi"
   event:
     ...
 ```
@@ -99,7 +99,7 @@ tags:
 
 ## 4. 验证
 
-- `tests/e2e_test.py:test_pool_edit`：POST /pool/char/hime/edit → info 含 canonical_name + aliases + notes + color_name + color_rgb；非法 RGB 被服务端丢弃
+- `tests/e2e_test.py:test_pool_edit`：POST /pool/char/北北鱼/edit → info 含 canonical_name + aliases + notes + color_name + color_rgb；非法 RGB 被服务端丢弃
 - 隐式测试：`tests/smoke_test.py:set_tag_info` + `tag_info`
 
 ## 5. 不变量

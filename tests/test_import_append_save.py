@@ -199,7 +199,7 @@ class PutPolaroidTest(ImportTestBase):
         self.asset_b = Asset(role="back", path=str(self.img_b), hash=self.hash_b)
         server.ps.upsert_polaroid(
             Polaroid(id="p1", shot_date="2026-08-04",
-                     tags=["char:hime"], notes="baseline",
+                     tags=["char:小薰"], notes="baseline",
                      assets=[self.asset_a, self.asset_b])
         )
         server.ps.save()
@@ -209,7 +209,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",  # 保持
-            "tags": ["char:hime"],      # 保持
+            "tags": ["char:小薰"],      # 保持
             "notes": "baseline",         # 保持
             "assets": [
                 {"role": "front_v2", "path": str(self.img_a),
@@ -238,7 +238,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [
                 {"role": "back", "path": str(self.img_b), "hash": self.hash_b},  # 原来 idx=1
@@ -256,7 +256,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [
                 {"role": "front", "path": str(self.img_a), "hash": self.hash_a},
@@ -275,7 +275,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [
                 {"role": "front", "path": str(self.img_a), "hash": self.hash_a},
@@ -292,7 +292,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [],
         })
@@ -303,7 +303,7 @@ class PutPolaroidTest(ImportTestBase):
         r = _put("/polaroid/p1", {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [
                 {"role": "front", "path": str(self.img_a), "hash": ""},
@@ -316,7 +316,7 @@ class PutPolaroidTest(ImportTestBase):
         body = {
             "id": "p1",
             "shot_date": "2026-08-04",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "baseline",
             "assets": [
                 {"role": "front", "path": str(self.img_a), "hash": self.hash_a},
@@ -335,7 +335,7 @@ class PutPolaroidTest(ImportTestBase):
         body = {
             "id": "p_new",
             "shot_date": "2026-08-06",
-            "tags": ["char:hime"],
+            "tags": ["char:小薰"],
             "notes": "新拍立得",
             "assets": [
                 {"role": "front", "path": str(self.img_a), "hash": self.hash_a},
@@ -347,7 +347,7 @@ class PutPolaroidTest(ImportTestBase):
         server.ps.reload()
         p = server.ps.polaroid("p_new")
         assert p is not None
-        self.assertEqual(p.tags, ["char:hime"])
+        self.assertEqual(p.tags, ["char:小薰"])
 
     def test_id_mismatch_rejected(self) -> None:
         """url 上 pid 与 body.id 不一致 → 400."""

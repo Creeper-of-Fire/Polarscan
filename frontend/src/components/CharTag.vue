@@ -2,7 +2,7 @@
   CharTag: 角色专用 tag chip
 
   职责 (单一职责):
-  - 接收完整 tag 字符串 (如 'char:hime')
+  - 接收完整 tag 字符串 (如 'char:小薰')
   - 用 useCharDisplay 反查该角色的元数据 (应援色 / canonical_name / aliases)
   - 显示逻辑封装在此 (key 去掉 'char:' 前缀 / 应援色 swatch / hovertip 文案)
 

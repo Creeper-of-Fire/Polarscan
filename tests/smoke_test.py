@@ -30,7 +30,7 @@ class PolarscanSmokeTest(unittest.TestCase):
         polaroid = Polaroid(
             id="sample_001",
             shot_date="2026-08-04",
-            tags=["char:strawberry", "shot:solo"],
+            tags=["char:小薰", "shot:solo"],
             notes="隔离冒烟测试",
             assets=[asset],
         )
@@ -38,8 +38,8 @@ class PolarscanSmokeTest(unittest.TestCase):
         self.ps.upsert_polaroid(polaroid)
         self.ps.set_tag_info(
             "char",
-            "strawberry",
-            {"canonical_name": "草莓", "aliases": ["strawberry"]},
+            "小薰",
+            {"canonical_name": "小薰Ayako", "aliases": ["小薰", "Ayako"]},
         )
         self.ps.save()
         self.ps.reload()
@@ -50,7 +50,7 @@ class PolarscanSmokeTest(unittest.TestCase):
         self.assertEqual(loaded.notes, "隔离冒烟测试")
         self.assertEqual(self.ps.query_by_tag("shot:solo"), [loaded])
         self.assertEqual(self.ps.query_by_prefix("char"), [loaded])
-        self.assertEqual(self.ps.tag_info("char", "strawberry")["canonical_name"], "草莓")
+        self.assertEqual(self.ps.tag_info("char", "小薰")["canonical_name"], "小薰Ayako")
 
         thumb_path = self.ps.thumb_path_for(loaded)
         self.assertIsNotNone(thumb_path)

@@ -116,7 +116,7 @@ def _pool_items(prefix: str) -> list[dict]:
 def api_polaroids(tag: Optional[str] = None):
     """全部 polaroid summary，或按 tag 过滤。
 
-    tag 形如 'char:my_push' 或 'shot:pair'。无冒号视为完整 tag 查询。
+    tag 形如 'char:小薰' 或 'shot:pair'。无冒号视为完整 tag 查询。
     """
     if tag:
         return [_polaroid_summary(p) for p in ps.query_by_tag(tag)]

@@ -148,7 +148,7 @@ class WebEndToEndTest(unittest.TestCase):
             Polaroid(
                 id="existing_001",
                 shot_date="2026-08-04",
-                tags=["char:strawberry"],
+                tags=["char:小薰"],
                 notes="端到端测试基准记录",
                 assets=[Asset.from_path(self.image_path, role="front")],
             )
@@ -193,7 +193,7 @@ class WebEndToEndTest(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["id"], "existing_001")
         self.assertEqual(data["shot_date"], "2026-08-04")
-        self.assertEqual(data["tags"], ["char:strawberry"])
+        self.assertEqual(data["tags"], ["char:小薰"])
         self.assertEqual(data["notes"], "端到端测试基准记录")
         self.assertEqual(len(data["assets"]), 1)
         self.assertEqual(data["assets"][0]["role"], "front")
@@ -218,7 +218,7 @@ class WebEndToEndTest(unittest.TestCase):
             json_body={
                 "id": "created_001",
                 "shot_date": "2026-08-04",
-                "tags": ["char:hime", "shot:pair"],
+                "tags": ["char:电电", "shot:pair"],
                 "notes": "网页端创建",
                 "assets": [
                     {
@@ -240,7 +240,7 @@ class WebEndToEndTest(unittest.TestCase):
         server.ps.reload()
         p = server.ps.polaroid("created_001")
         self.assertIsNotNone(p)
-        self.assertEqual(p.tags, ["char:hime", "shot:pair"])
+        self.assertEqual(p.tags, ["char:电电", "shot:pair"])
         self.assertEqual(p.assets[0].role, "front")
 
     def test_update_polaroid_via_put(self) -> None:
@@ -251,7 +251,7 @@ class WebEndToEndTest(unittest.TestCase):
         body = {
             "id": "existing_001",
             "shot_date": "2026-08-05",
-            "tags": ["char:strawberry", "char:hime", "shot:solo"],
+            "tags": ["char:小薰", "char:电电", "shot:solo"],
             "notes": "自动保存后的备注",
             "assets": [
                 {
@@ -272,7 +272,7 @@ class WebEndToEndTest(unittest.TestCase):
         p = server.ps.polaroid("existing_001")
         self.assertEqual(p.shot_date, "2026-08-05")
         self.assertEqual(p.notes, "自动保存后的备注")
-        self.assertEqual(p.tags, ["char:strawberry", "char:hime", "shot:solo"])
+        self.assertEqual(p.tags, ["char:小薰", "char:电电", "shot:solo"])
 
         # 第二次: 幂等 - 同样的 body
         r2 = self.request("PUT", "/polaroid/existing_001", json_body=body)
@@ -338,7 +338,7 @@ class WebEndToEndTest(unittest.TestCase):
             json_body={
                 "id": "existing_001",
                 "shot_date": "2026-08-04",  # 保持
-                "tags": ["char:strawberry"],  # 保持
+                "tags": ["char:小薰"],  # 保持
                 "notes": "端到端测试基准记录",  # 保持
                 "assets": [
                     {
@@ -366,13 +366,13 @@ class WebEndToEndTest(unittest.TestCase):
         """POST /pool/{prefix}/{key}/edit 保存标签元数据 (含应援色字段)."""
         response = self.request(
             "POST",
-            "/pool/char/hime/edit",
+            "/pool/char/北北鱼/edit",
             data={
-                "canonical_name": "姬",
-                "aliases": "hime, 小姬",
+                "canonical_name": "北北鱼Honomi",
+                "aliases": "北北鱼, Honomi",
                 "notes": "角色别名测试",
                 "color_name": "粉色",
-                "color_rgb": "#FFB7C5",
+                "color_rgb": "#F9A7D6",
                 "extra_json": "",
                 "return_to": "/pool/char",
             },
@@ -381,18 +381,18 @@ class WebEndToEndTest(unittest.TestCase):
         self.assertTrue(response.json()["ok"])
 
         server.ps.reload()
-        info = server.ps.tag_info("char", "hime")
-        self.assertEqual(info["canonical_name"], "姬")
-        self.assertEqual(info["aliases"], ["hime", "小姬"])
+        info = server.ps.tag_info("char", "北北鱼")
+        self.assertEqual(info["canonical_name"], "北北鱼Honomi")
+        self.assertEqual(info["aliases"], ["北北鱼", "Honomi"])
         self.assertEqual(info["color_name"], "粉色")
-        self.assertEqual(info["color_rgb"], "#FFB7C5")
+        self.assertEqual(info["color_rgb"], "#F9A7D6")
 
         # 非法 RGB 被服务端丢弃 (清空), 不会爆掉
         response = self.request(
             "POST",
-            "/pool/char/hime/edit",
+            "/pool/char/北北鱼/edit",
             data={
-                "canonical_name": "姬",
+                "canonical_name": "北北鱼Honomi",
                 "color_name": "",
                 "color_rgb": "not-a-hex",
                 "extra_json": "",
@@ -401,7 +401,7 @@ class WebEndToEndTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         server.ps.reload()
-        info = server.ps.tag_info("char", "hime")
+        info = server.ps.tag_info("char", "北北鱼")
         self.assertEqual(info.get("color_rgb"), "")
 
     def test_delete_polaroid(self) -> None:

@@ -72,7 +72,7 @@ test('parentDirName: POSIX 路径', () => {
 test('parentDirName: null / 空 / 无父目录', () => {
   assert.equal(parentDirName(null), null)
   assert.equal(parentDirName(''), null)
-  assert.equal(parentDirName('foo.jpg'), null)
+  assert.equal(parentDirName('ayako.jpg'), null)
 })
 
 test('idDateRange: 单日 pid', () => {

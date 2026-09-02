@@ -15,14 +15,14 @@
 //     suggestions: () => props.suggestions,
 //     getSelected: () => props.modelValue,
 //   })
-//   const tag = cs.computeTag('my_push')  // → 'char:my_push' | null
+//   const tag = cs.computeTag('北北鱼')  // → 'char:北北鱼' | null
 //   cs.clearQuery()                       // 添加成功后清空输入 + 候选
 //   cs.onInput()                          // 输入时重算 suggestItems
 
 import { ref, computed } from 'vue'
 
 export interface ChipStreamOptions {
-  /** 自动补全前缀 (输入 'my_push' 时补为 'char:my_push') */
+  /** 自动补全前缀 (输入 '北北鱼' 时补为 'char:北北鱼') */
   autoPrefix?: string
   /** 是否允许自由格式 (无前缀). 设为 true 时: 输入必须带冒号, 否则返回 null. */
   allowFreeform?: boolean

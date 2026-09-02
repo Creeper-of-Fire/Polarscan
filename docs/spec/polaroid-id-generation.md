@@ -29,8 +29,8 @@ id 派生逻辑必须可独立测试——本 spec 定义派生规则。
 ```
 
 示例：
-- `make_polaroid_id("2025-10-18", "strawberry")` → `2025-10-18_strawberry_4a7b1c`
-- `make_polaroid_id("2026-08-04", "中文名")` → `2026-08-04_中文名_4a7b1c`
+- `make_polaroid_id("2025-10-18", "小薰")` → `2025-10-18_小薰_4a7b1c`
+- `make_polaroid_id("2026-08-04", "电电")` → `2026-08-04_电电_4a7b1c`
 - `make_polaroid_id()` → `nostamp_nochar_9e3d2a`
 
 ### 性质

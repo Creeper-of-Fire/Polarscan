@@ -24,7 +24,7 @@ test('useChipStream: char 流自动加前缀', () => {
     suggestions: emptySelected,
     getSelected: emptySelected,
   })
-  assert.equal(cs.computeTag('my_push'), 'char:my_push')
+  assert.equal(cs.computeTag('北北鱼'), 'char:北北鱼')
 })
 
 test('useChipStream: 已带前缀则不重复', () => {
@@ -34,9 +34,9 @@ test('useChipStream: 已带前缀则不重复', () => {
     suggestions: emptySelected,
     getSelected: () => sel,
   })
-  assert.equal(cs.computeTag('char:my_push'), 'char:my_push')
-  sel.push('char:my_push')
-  assert.equal(cs.computeTag('char:my_push'), null)
+  assert.equal(cs.computeTag('char:北北鱼'), 'char:北北鱼')
+  sel.push('char:北北鱼')
+  assert.equal(cs.computeTag('char:北北鱼'), null)
 })
 
 test('useChipStream: freeform 流不加前缀, 接受带冒号输入', () => {
@@ -45,7 +45,7 @@ test('useChipStream: freeform 流不加前缀, 接受带冒号输入', () => {
     suggestions: emptySelected,
     getSelected: emptySelected,
   })
-  assert.equal(cs.computeTag('event:foo'), 'event:foo')
+  assert.equal(cs.computeTag('event:ayako_birthday'), 'event:ayako_birthday')
   assert.equal(cs.computeTag('shot:pair'), 'shot:pair')
 })
 
@@ -69,20 +69,20 @@ test('useChipStream: freeform 流拒绝无冒号输入 (B2 fix)', () => {
 })
 
 test('useChipStream: 去重看 getSelected 源头 (B1 fix)', () => {
-  const sel = ['char:alice']
+  const sel = ['char:aki']
   const cs = useChipStream({
     autoPrefix: 'char',
     suggestions: emptySelected,
     getSelected: () => sel,
   })
   // 即便 stream 内部不持有, 也正确识别源头已有
-  assert.equal(cs.computeTag('alice'), null)
-  assert.equal(cs.computeTag('char:alice'), null)
+  assert.equal(cs.computeTag('aki'), null)
+  assert.equal(cs.computeTag('char:aki'), null)
 })
 
 test('useChipStream: 跨 stream 去重 (B1 fix, 双 stream 共享同一个源头)', () => {
   // 模拟 PolaroidTagsEditor: 两个 stream 都从同一个 props.modelValue 读 getSelected
-  const model = ['char:foo']
+  const model = ['char:yusa']
   const sharedSelected = () => model
 
   const charStream = useChipStream({
@@ -96,43 +96,45 @@ test('useChipStream: 跨 stream 去重 (B1 fix, 双 stream 共享同一个源头
     getSelected: sharedSelected,
   })
 
-  // char 流加 char:foo → 已在源头, 应返回 null
-  assert.equal(charStream.computeTag('foo'), null)
-  // other 流尝试加 char:foo (freeform 接受) → 已在源头, 应返回 null
-  assert.equal(otherStream.computeTag('char:foo'), null)
-  // other 流加新 event:bar → 应返回 'event:bar'
-  assert.equal(otherStream.computeTag('event:bar'), 'event:bar')
+  // char 流加 char:yusa → 已在源头, 应返回 null
+  assert.equal(charStream.computeTag('yusa'), null)
+  // other 流尝试加 char:yusa (freeform 接受) → 已在源头, 应返回 null
+  assert.equal(otherStream.computeTag('char:yusa'), null)
+  // other 流加新 event:ayako_sp → 应返回 'event:ayako_sp'
+  assert.equal(otherStream.computeTag('event:ayako_sp'), 'event:ayako_sp')
 })
 
 test('useChipStream: onInput 重算 suggestItems', () => {
   const cs = useChipStream({
     autoPrefix: 'char',
-    suggestions: () => ['char:strawberry', 'char:my_push', 'event:foo'],
+    suggestions: () => ['char:小薰', 'char:北北鱼', 'event:ayako_birthday'],
     getSelected: emptySelected,
   })
-  cs.query.value = 'push'
+  cs.query.value = '北'
   cs.onInput()
-  assert.deepEqual(cs.suggestItems.value, ['char:my_push'])
+  assert.deepEqual(cs.suggestItems.value, ['char:北北鱼'])
 })
 
 test('useChipStream: onInput 排除已选 chip (通过 getSelected)', () => {
+  // 用英文别名 ayako + aki 模拟"两候选都含 a, 排除已选"——CJK 字符里需要找公共子串,
+  // 英文别名天然适合 substring 过滤测试.
   const cs = useChipStream({
     autoPrefix: 'char',
-    suggestions: () => ['char:strawberry', 'char:my_push'],
-    getSelected: () => ['char:strawberry'],
+    suggestions: () => ['char:ayako', 'char:aki'],
+    getSelected: () => ['char:ayako'],
   })
-  cs.query.value = 's' // strawberry + my_push 都包含 's'
+  cs.query.value = 'a' // ayako + aki 都包含 'a'
   cs.onInput()
-  assert.deepEqual(cs.suggestItems.value, ['char:my_push'])
+  assert.deepEqual(cs.suggestItems.value, ['char:aki'])
 })
 
 test('useChipStream: clearQuery 清空 query + suggestItems', () => {
   const cs = useChipStream({
     autoPrefix: 'char',
-    suggestions: () => ['char:strawberry', 'char:my_push'],
+    suggestions: () => ['char:小薰', 'char:北北鱼'],
     getSelected: emptySelected,
   })
-  cs.query.value = 'push' // 命中 'char:my_push'
+  cs.query.value = '北' // 命中 'char:北北鱼'
   cs.onInput()
   assert.equal(cs.suggestItems.value.length, 1)
   cs.clearQuery()
@@ -143,10 +145,10 @@ test('useChipStream: clearQuery 清空 query + suggestItems', () => {
 test('useChipStream: freeform 流 onInput 不过滤带前缀的', () => {
   const cs = useChipStream({
     allowFreeform: true,
-    suggestions: () => ['event:shenshan', 'shot:pair', 'sig:foo'],
+    suggestions: () => ['event:ayako_birthday', 'shot:pair', 'sig:有签名'],
     getSelected: emptySelected,
   })
-  cs.query.value = 'shen'
+  cs.query.value = 'birth'
   cs.onInput()
-  assert.deepEqual(cs.suggestItems.value, ['event:shenshan'])
+  assert.deepEqual(cs.suggestItems.value, ['event:ayako_birthday'])
 })
