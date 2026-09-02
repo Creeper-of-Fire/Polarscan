@@ -9,14 +9,15 @@
     PolaroidImagePreview → 纯展示
 -->
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
-import { useRouter, onBeforeRouteUpdate } from 'vue-router'
+import { ref, computed, h, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NSpin, NTag, NInput, NButton, NSpace, NCard, useMessage, useDialog,
 } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
+import { useShotDateResolver } from '@/composables/useShotDateResolver'
 import { useDropzone } from '@/composables/useDropzone'
 import { assetsDateRange } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
@@ -35,22 +36,27 @@ const store = usePolarscanStore()
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 
-// mount: 加载 summaries + polaroid + tag 候选 (全部过 store)
+// 跨日拍立得不允许保留 shot_date 默认值 (composable 内部 watch + immediate)
+// 见 useShotDateResolver 不变量说明.
+useShotDateResolver(polaroid)
+
+// mount: 加载 summaries + tag 候选 (polaroid 由 watch 拉, 见下)
 // char 应援色由 CharTag 自己触发懒加载 (store.loadCharColors 内部 dedup)
 onMounted(async () => {
   await Promise.all([
     store.listSummaries(),
-    editor.load(props.pid),
     store.listAllTags(),
   ])
 })
 
-// 同组件路由切换(/bench/A → /bench/B):summaries 不重拉 (单组件生命周期内一份就够),
-// editor 重新拉详情; tag 候选走 store cache 不重拉.
-onBeforeRouteUpdate(async (to) => {
-  const newPid = to.params.pid as string
-  await editor.load(newPid)
-})
+// 自然派生: pid 变 → editor 重新拉详情.
+// watch 替代 onBeforeRouteUpdate; immediate 处理 mount 时首次加载.
+// tag 候选 / summaries 走 store cache 不重拉.
+watch(
+  () => props.pid,
+  (newPid) => { void editor.load(newPid) },
+  { immediate: true },
+)
 
 // ---------- dropzone (追加) ----------
 const dz = useDropzone({ withThumb: false })

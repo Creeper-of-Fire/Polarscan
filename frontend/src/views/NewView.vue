@@ -9,13 +9,14 @@
     PolaroidTagsEditor     → 统一角色 + 其他标签 (与 BenchView 共享; 归并后 char 加得上去)
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NCard, NForm, NFormItem, NInput, NButton, NSpace, useMessage,
 } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
+import { useShotDateResolver } from '@/composables/useShotDateResolver'
 import { useDropzone } from '@/composables/useDropzone'
 import { assetsDateRange } from '@/composables/usePathParse'
 import type { Asset, DroppedFile } from '@/types'
@@ -33,10 +34,14 @@ const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 const submitting = ref(false)
 
+// 跨日拍立得不允许保留 shot_date 默认值.
+// 与 BenchView 共享同一不变量 (useShotDateResolver).
+useShotDateResolver(polaroid)
+
 // ---------- 标签候选 (过 store 拿 cache; char 应援色由 CharTag 懒加载) ----------
-;(async () => {
+onMounted(async () => {
   await store.listAllTags()
-})()
+})
 
 // 派生 id 用: 取 polaroid.tags 里第一个 char tag 的 char 名
 const primaryCharForId = computed<string | null>(() => {
