@@ -36,8 +36,9 @@ const emit = defineEmits<{
 // 反查 + 懒加载都封装在 composable; CharTag 只用 display 渲染.
 const display = useCharDisplay(() => props.tag)
 
-// 视觉字段: 应援色缺失时降级到 neutral 灰.
-const swatch = computed(() => display.value.color_rgb || '#d9d9d9')
+// 视觉字段: 应援色由 color_rgb 字段定义; 空字符串/null → 不渲染 swatch, 不 fallback 到中性灰.
+// 判定一律 "是否有定义应援色", 与 tag 类型 (char/非char) 解耦.
+const swatch = computed(() => display.value.color_rgb || null)
 // hovertip: 有 color_name 时附在 tag 后, 没有就只显示原 tag.
 const hoverText = computed(() => display.value.color_name
   ? `${display.value.tag}  (${display.value.color_name})`
@@ -58,7 +59,7 @@ function onClick() {
         @click="onClick"
         @close="emit('close')"
       >
-        <span class="char-tag-swatch" :style="{ background: swatch }" />
+        <span v-if="swatch" class="char-tag-swatch" :style="{ background: swatch }" />
         <span class="char-tag-text">{{ display.key }}</span>
       </NTag>
     </template>
