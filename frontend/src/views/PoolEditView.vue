@@ -1,5 +1,5 @@
 <!--
-  PoolEditView: 编辑单条 pool 元数据 (canonical_name + aliases + notes + 应援色)
+  PoolEditView: 编辑单条 pool 元数据 (canonical_name + aliases + notes + 应援色 + 其他任意字段)
 
   应援色字段 (顶层, 与 canonical_name 同级):
     color_name  str   文字描述 (例: "黄色")
@@ -7,17 +7,29 @@
 
   core 不解析元数据内部结构, 这里走 backend 的"任意 JSON 透传"约定;
   后端 /pool/.../edit 端点把 form 字段写入 meta 顶层 dict.
+
+  2026-09: "附加字段" 改用通用 MetadataEditor (逐 key-value 编辑器),
+  替代旧的 "已有额外字段只读展示 + JSON 文本框" 双块结构.
+  - 已知字段保留独立 UI (canonical_name / aliases / notes / color_name / color_rgb)
+  - 其他任意 extras 字段统一交给 MetadataEditor, v-model 绑到 extrasDict
+  - save() 时把 extrasDict 序列化成 JSON 字符串走 extra_json form 字段, 后端契约不变
 -->
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  NSpin, NForm, NFormItem, NInput, NButton, NSpace, NDescriptions, NDescriptionsItem,
+  NSpin, NForm, NFormItem, NInput, NButton, NSpace,
   NCard, NColorPicker, useMessage, useDialog,
 } from 'naive-ui'
 import { poolApi } from '@/api'
 import { usePolarscanStore } from '@/stores/polarscan'
+import MetadataEditor from '@/components/MetadataEditor.vue'
 import type { PolaroidSummary } from '@/types'
+
+/** 硬编码顶层字段: 由各表单单独编辑, 不进 MetadataEditor */
+const KNOWN_FIELDS = new Set([
+  'canonical_name', 'aliases', 'notes', 'color_name', 'color_rgb',
+])
 
 const props = defineProps<{ prefix: string; tagKey: string }>()
 const router = useRouter()
@@ -82,7 +94,7 @@ async function save() {
     notes: notes.value,
     color_name: colorName.value.trim(),
     color_rgb: colorRgb.value,
-    extra_json: extraJson.value,
+    extra_json: JSON.stringify(extrasDict.value),
     return_to: returnTo.value,
   })
   if (r.ok) {
@@ -115,11 +127,26 @@ async function deleteMeta() {
   })
 }
 
-const extras = computed(() =>
-  Object.entries(info.value).filter(
-    ([k]) => !['canonical_name', 'aliases', 'notes', 'color_name', 'color_rgb'].includes(k),
-  ),
-)
+const extrasDict = computed<Record<string, unknown>>({
+  get: () => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(info.value)) {
+      if (!KNOWN_FIELDS.has(k)) out[k] = v
+    }
+    return out
+  },
+  set: (next) => {
+    // 保留已知字段, 替换 extras — 防止 MetadataEditor 的 emit 覆盖硬编码字段
+    const merged: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(info.value)) {
+      if (KNOWN_FIELDS.has(k)) merged[k] = v
+    }
+    for (const [k, v] of Object.entries(next)) {
+      merged[k] = v
+    }
+    info.value = merged
+  },
+})
 </script>
 
 <template>
@@ -180,15 +207,8 @@ const extras = computed(() =>
           <NFormItem label="备注（notes）">
             <NInput v-model:value="notes" type="textarea" :rows="4" />
           </NFormItem>
-          <NFormItem v-if="extras.length > 0" label="已有额外字段">
-            <NDescriptions :column="1" bordered size="small">
-              <NDescriptionsItem v-for="[k, v] in extras" :key="k" :label="k">
-                <code>{{ v }}</code>
-              </NDescriptionsItem>
-            </NDescriptions>
-          </NFormItem>
-          <NFormItem label='附加字段 JSON（例: {"date": "2025-10-12", "venue": "成都"}）'>
-            <NInput v-model:value="extraJson" type="textarea" :rows="3" />
+          <NFormItem label="附加字段 (任意 JSON 透传)">
+            <MetadataEditor v-model="extrasDict" />
           </NFormItem>
           <NSpace>
             <NButton type="primary" @click="save">💾 保存</NButton>
