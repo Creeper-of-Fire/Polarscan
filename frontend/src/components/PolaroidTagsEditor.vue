@@ -186,28 +186,32 @@ function goChar(key: string) {
         />
         <NButton @click="otherAdd(otherQuery)">+ 标签</NButton>
       </NSpace>
+      <!-- 池快捷按钮: 与已选 chip 统一 NTag 形态 (dashed + 加号 = "可加");
+           视觉上与已选 (实色 type=success|warning) 区分, 点击是 + -->
       <div v-if="shotPool.length > 0 || sigPool.length > 0" style="margin-top: 8px">
         <span style="color: #666; font-size: 12px">shot / sig 池:</span>
-        <NButton
+        <NTag
           v-for="s in shotPool.slice(0, 8)"
           :key="'shot-' + s"
-          size="small"
-          text
           type="success"
+          size="small"
+          :dashed="true"
+          style="cursor: pointer; margin: 2px"
           @click="otherAdd(`shot:${s}`)"
         >
           + shot:{{ s }}
-        </NButton>
-        <NButton
+        </NTag>
+        <NTag
           v-for="s in sigPool.slice(0, 8)"
           :key="'sig-' + s"
-          size="small"
-          text
           type="warning"
+          size="small"
+          :dashed="true"
+          style="cursor: pointer; margin: 2px"
           @click="otherAdd(`sig:${s}`)"
         >
           + sig:{{ s }}
-        </NButton>
+        </NTag>
       </div>
     </NCard>
   </div>
