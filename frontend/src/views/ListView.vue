@@ -60,15 +60,15 @@ const filtered = computed(() => {
   return store.summaries.filter((s) => required.every((t) => s.tags?.includes(t)))
 })
 
-function isSelected(prefix: string, value: string): boolean {
-  return selectedTags.value.has(`${prefix}:${value}`)
+function isSelected(_prefix: string, value: string): boolean {
+  // value 现在是带 prefix 的完整 tag (后端契约: 见 polarscan/api.py:all_tags_with_prefix).
+  return selectedTags.value.has(value)
 }
 
 function toggleValue(value: string) {
-  const full = `${activePrefix.value}:${value}`
   const next = new Set(selectedTags.value)
-  if (next.has(full)) next.delete(full)
-  else next.add(full)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
   selectedTags.value = next
 }
 
@@ -80,6 +80,13 @@ function removeTag(tag: string) {
 
 function clearFilter() {
   selectedTags.value = new Set()
+}
+
+/** 渲染时去掉 prefix (后端契约返回的是完整 tag, 但 UI 在 prefix chip 已选定的情况下,
+ *  显示 value 部分即可). 无冒号的项按 legacy 处理, 原样返回. */
+function valueDisplay(v: string): string {
+  const c = v.indexOf(':')
+  return c > 0 ? v.slice(c + 1) : v
 }
 
 async function reload() {
@@ -155,7 +162,7 @@ function handleCardClick(e: MouseEvent, id: string) {
           ghost
           @click="toggleValue(v)"
         >
-          {{ v }}
+          {{ valueDisplay(v) }}
         </NButton>
         <span v-if="currentValues.length === 0" style="color: #999; font-size: 12px">
           (无值)

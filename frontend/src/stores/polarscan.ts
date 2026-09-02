@@ -45,6 +45,8 @@ export const usePolarscanStore = defineStore('polarscan', () => {
 
   async function refreshTagSuggestions(): Promise<void> {
     const grouped = await tagsApi.all()
+    // 后端 all_tags_with_prefix 现在返回带 prefix 的完整 tag (例如 'char:Hoshiro'),
+    // 这里 flatten 即得到 useChipStream 期望的形态. allTagGroups 保留 dict 形态给 ListView.
     tagSuggestions.value = ([] as string[]).concat(...Object.values(grouped))
     allTagGroups.value = grouped
   }

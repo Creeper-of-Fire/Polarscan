@@ -36,13 +36,12 @@ export function useChipStream(opts: ChipStreamOptions) {
   const query = ref('')
   const suggestItems = ref<string[]>([])
 
-  /** 候选前置过滤: char 模式只显示 char:* (或 legacy 无冒号); freeform 模式全显示. */
+  /** 候选前置过滤: char 模式只显示 char:* (严格,不再混入 legacy 无冒号 tag,
+   * 也不混入其他 prefix 的 tag); freeform 模式全显示. */
   const filteredSuggestions = computed(() => {
     if (opts.allowFreeform) return opts.suggestions()
     const prefix = opts.autoPrefix
-    return opts.suggestions().filter(
-      (s) => s.startsWith(`${prefix}:`) || !s.includes(':'),
-    )
+    return opts.suggestions().filter((s) => s.startsWith(`${prefix}:`))
   })
 
   /** 给定 raw 输入, 返回应当写入的完整 tag (含前缀); 空输入或重复返回 null. */
@@ -68,10 +67,52 @@ export function useChipStream(opts: ChipStreamOptions) {
       suggestItems.value = []
       return
     }
-    suggestItems.value = filteredSuggestions.value
+    // 输入含 ':' (如 'event:' / 'shot:p') → 只取同 prefix 的候选 (prefix-aware).
+    // 输入无 ':' (如 'sh' / 'abc')  → 走全集 includes 匹配.
+    const colonIdx = q.indexOf(':')
+    const matches = (colonIdx > 0
+      ? filteredSuggestions.value.filter((s) => s.toLowerCase().startsWith(`${q.slice(0, colonIdx)}:`))
+      : filteredSuggestions.value
+    )
       .filter((s) => s.toLowerCase().includes(q))
       .filter((s) => !opts.getSelected().includes(s))
-      .slice(0, 8)
+
+    // 无 prefix 输入: round-robin by prefix, 防止 char 等高频 prefix 堆叠
+    // 把 shot / event 等挤掉 (e.g. 输入 'sh' 时仍能看到 shot:xxx / event:xxx).
+    // 含 prefix 输入已限定同 prefix, 直接 slice.
+    suggestItems.value = colonIdx > 0
+      ? matches.slice(0, 8)
+      : roundRobinByPrefix(matches, 8)
+  }
+
+  /** 按 prefix 轮转取候选项, 每个 prefix 取一项再循环, 直到填满 limit.
+   *  输入假定已按 prefix group 顺序排列 (后端 /api/all-tags flatten 后保持此序);
+   *  这里不重新排序, 只在原序基础上交错抽样. */
+  function roundRobinByPrefix(items: string[], limit: number): string[] {
+    const groups = new Map<string, string[]>()
+    for (const it of items) {
+      const c = it.indexOf(':')
+      const p = c > 0 ? it.slice(0, c) : ''
+      let g = groups.get(p)
+      if (!g) {
+        g = []
+        groups.set(p, g)
+      }
+      g.push(it)
+    }
+    const out: string[] = []
+    while (out.length < limit) {
+      let added = false
+      for (const g of groups.values()) {
+        if (g.length > 0) {
+          out.push(g.shift() as string)
+          added = true
+          if (out.length >= limit) break
+        }
+      }
+      if (!added) break
+    }
+    return out
   }
 
   function clearQuery(): void {

@@ -199,7 +199,12 @@ class Polarscan:
             self._data.setdefault("tags", {})[prefix] = registry
 
     def all_tags_with_prefix(self, prefix: str) -> list[str]:
-        """返回所有拍立得已使用且前缀匹配的标签值，不解析元数据。
+        """返回所有拍立得已使用且前缀匹配的标签，元素为完整 tag (`prefix:value`)。
+
+        返回完整 tag (而非裸 value) 是契约的一部分：前端 useChipStream / tagSuggestions
+        等都基于"带 prefix 的完整 tag"做过滤 (`startsWith('char:')` / `includes(q)` /
+        round-robin-by-prefix 等)。返回裸 value 会让前端被迫在 store 里手动拼 prefix,
+        形成契约分裂.
 
         结果用于界面自动补全：先按使用频率降序排列，同频次再按键名字母序升序，
         让工作台的快捷添加按钮与候选列表优先显示常用项。
@@ -211,7 +216,10 @@ class Polarscan:
                     if tag_prefix(t) == prefix:
                         v = tag_value(t)
                         counts[v] = counts.get(v, 0) + 1
-            return sorted(counts.keys(), key=lambda k: (-counts[k], k))
+            return sorted(
+                (f"{prefix}:{v}" for v in counts.keys()),
+                key=lambda k: (-counts[tag_value(k)], tag_value(k)),
+            )
 
     # ---- id 派生（工作台使用） ----
     def suggest_id(self, shot_date: str | None, tags: list[str]) -> str:
