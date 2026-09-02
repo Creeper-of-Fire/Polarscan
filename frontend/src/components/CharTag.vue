@@ -3,21 +3,21 @@
 
   职责 (单一职责):
   - 接收完整 tag 字符串 (如 'char:hime')
-  - 自己从 store 拿该角色的元数据 (应援色 / 未来 canonical_name 等)
+  - 用 useCharDisplay 反查该角色的元数据 (应援色 / canonical_name / aliases)
   - 显示逻辑封装在此 (key 去掉 'char:' 前缀 / 应援色 swatch / hovertip 文案)
 
-  设计要点 (2026-08 应援色):
-  - caller 只传 tag 字符串, 不需要知道 charColors / store / 元数据加载.
-  - store 的 charColors 由 CharTag 在 onMounted 懒加载触发 (store 内部 dedup).
+  设计要点 (2026-08 应援色; 2026-09 元数据搬到 composable):
+  - caller 只传 tag 字符串, 不需要知道 charMeta / store / 元数据加载.
+  - 元数据反查通过 useCharDisplay, store 内部 dedup.
   - click 事件 emit 出去的是 key (已去掉前缀), 方便 caller 直接用:
       @click="goChar"        // 已保存的 char chip → 跳转到该角色编辑页
       @click="addFromPool"   // charPool 快捷按钮 → 加到 polaroid
   - 文本逻辑封装在此 (后续切 canonical_name 等只改本组件).
 -->
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
-import { usePolarscanStore } from '@/stores/polarscan'
+import { useCharDisplay } from '@/composables/useCharDisplay'
 
 const props = withDefaults(
   defineProps<{
@@ -33,27 +33,19 @@ const emit = defineEmits<{
   click: [key: string]
 }>()
 
-const store = usePolarscanStore()
+// 反查 + 懒加载都封装在 composable; CharTag 只用 display 渲染.
+const display = useCharDisplay(() => props.tag)
 
-// 触发 store 懒加载 (首次 CharTag 渲染时拉, 后续由 store 内部 dedup).
-onMounted(() => {
-  void store.loadCharColors()
-})
-
-// 角色 key: 去掉 'char:' 前缀. 文本逻辑封装在此.
-const key = computed(() => props.tag.replace(/^char:/, ''))
-
-// 应援色: 自己从 store 拿. 字段读取约定见 types.ts:charOshiColorFromMeta.
-const color = computed(() => store.charColors[key.value])
-
-const swatch = computed(() => color.value?.rgb || '#d9d9d9')
-const hoverText = computed(() => color.value?.name
-  ? `${props.tag}  (${color.value.name})`
-  : props.tag,
+// 视觉字段: 应援色缺失时降级到 neutral 灰.
+const swatch = computed(() => display.value.color_rgb || '#d9d9d9')
+// hovertip: 有 color_name 时附在 tag 后, 没有就只显示原 tag.
+const hoverText = computed(() => display.value.color_name
+  ? `${display.value.tag}  (${display.value.color_name})`
+  : display.value.tag,
 )
 
 function onClick() {
-  emit('click', key.value)
+  emit('click', display.value.key)
 }
 </script>
 
@@ -67,7 +59,7 @@ function onClick() {
         @close="emit('close')"
       >
         <span class="char-tag-swatch" :style="{ background: swatch }" />
-        <span class="char-tag-text">{{ key }}</span>
+        <span class="char-tag-text">{{ display.key }}</span>
       </NTag>
     </template>
     {{ hoverText }}

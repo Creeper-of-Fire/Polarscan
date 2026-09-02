@@ -7,9 +7,14 @@
 //   调用方永远不应该手动调"刷新".
 // - 视图层(views)只读 summaries / tagSuggestions, 改数据走 action.
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { polaroidsApi, tagsApi, poolApi } from '@/api'
-import type { CharOshiColor, Polaroid, PolaroidSummary } from '@/types'
+import {
+  charOshiColorFromMeta,
+  type CharOshiColor,
+  type Polaroid,
+  type PolaroidSummary,
+} from '@/types'
 
 export interface SavePolaroidResult {
   ok: boolean
@@ -23,6 +28,36 @@ export interface AppendFilesResult {
   asset_count: number
 }
 
+/** char tag 的完整展示字段 (供 CharTag / NAutoComplete 选项渲染).
+ *  core 不解析 meta 内部结构, 这里做约定的字段读取 (canonical_name / aliases /
+ *  color_name / color_rgb). 缺失字段视为 null, UI 降级渲染. */
+export interface CharDisplay {
+  tag: string
+  key: string
+  canonical_name: string | null
+  aliases: string[]
+  color_rgb: string | null
+  color_name: string | null
+}
+
+/** 从 charMeta dict 里按 key 派生展示字段; 缺失视为 null. */
+function charDisplayFromMeta(key: string, meta: Record<string, unknown> | undefined): CharDisplay {
+  const m = meta
+  const canonical = typeof m?.canonical_name === 'string' && m.canonical_name.trim()
+    ? m.canonical_name.trim()
+    : null
+  const aliases = Array.isArray(m?.aliases)
+    ? (m.aliases as unknown[]).filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+    : []
+  const colorRgb = typeof m?.color_rgb === 'string' && /^#[0-9a-fA-F]{6}$/.test(m.color_rgb)
+    ? m.color_rgb
+    : null
+  const colorName = typeof m?.color_name === 'string' && m.color_name.trim()
+    ? m.color_name.trim()
+    : null
+  return { tag: `char:${key}`, key, canonical_name: canonical, aliases, color_rgb: colorRgb, color_name: colorName }
+}
+
 export const usePolarscanStore = defineStore('polarscan', () => {
   // ===== state (公开读, 仅 action 内部写) =====
   const summaries = ref<PolaroidSummary[]>([])
@@ -30,9 +65,23 @@ export const usePolarscanStore = defineStore('polarscan', () => {
   const tagSuggestions = ref<string[]>([])
   // 分组字典 {prefix: [value, ...]}, ListView 按 prefix chip 切换时用
   const allTagGroups = ref<Record<string, string[]>>({})
-  // 角色应援色映射 (key → {name, rgb}); BenchView/NewView 的 CharTag 用
-  const charColors = ref<Record<string, CharOshiColor>>({})
-  const charColorsLoaded = ref(false)
+  // char 池完整 meta (key → {canonical_name, aliases, color_name, color_rgb, ...}).
+  // 这是 char tag 渲染 (CharTag / NAutoComplete 选项) 的元数据真值;
+  // charColors 现在只是它的派生 (向后兼容, 不再单独拉一次).
+  const charMeta = ref<Record<string, Record<string, unknown>>>({})
+  const charMetaLoaded = ref(false)
+
+  // charColors: 派生自 charMeta (只暴露 name+rgb); 旧 API 兼容, 不再单独缓存.
+  const charColors = computed<Record<string, CharOshiColor>>(() => {
+    const out: Record<string, CharOshiColor> = {}
+    for (const [k, m] of Object.entries(charMeta.value)) {
+      const c = charOshiColorFromMeta(m)
+      if (c.name || c.rgb) out[k] = c
+    }
+    return out
+  })
+  // charColorsLoaded: 派生自 charMetaLoaded (computed 反向兼容旧 ref API)
+  const charColorsLoaded = computed(() => charMetaLoaded.value)
 
   // ===== private: 缓存维护, 不 export =====
   // 失败安全: refreshSummaries 抛错时 caller (action) 不会更新 summaries,
@@ -51,9 +100,14 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     allTagGroups.value = grouped
   }
 
-  async function refreshCharColors(): Promise<void> {
-    charColors.value = await poolApi.colorMap('char')
-    charColorsLoaded.value = true
+  async function refreshCharMeta(): Promise<void> {
+    const items = await poolApi.index('char')
+    const out: Record<string, Record<string, unknown>> = {}
+    for (const it of items) {
+      out[it.key] = (it.meta ?? {}) as Record<string, unknown>
+    }
+    charMeta.value = out
+    charMetaLoaded.value = true
   }
 
   // ===== actions (公开入口, 内部维护 cache) =====
@@ -96,17 +150,29 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     return allTagGroups.value
   }
 
-  /** 拉 char 应援色映射. 首次拉, 之后返回 cache. */
-  async function loadCharColors(): Promise<Record<string, CharOshiColor>> {
-    if (!charColorsLoaded.value) {
-      await refreshCharColors()
+  /** 拉 char 完整 meta (key → 完整 pool meta). 首次拉, 之后返回 cache. */
+  async function loadCharMeta(): Promise<Record<string, Record<string, unknown>>> {
+    if (!charMetaLoaded.value) {
+      await refreshCharMeta()
     }
+    return charMeta.value
+  }
+
+  /** 给定 char key 派生展示字段 (canonical_name / aliases / color_*);
+   *  缺失字段视为 null, 不抛错. meta 未加载时返回 null 字段 (UI 降级). */
+  function getCharDisplay(key: string): CharDisplay {
+    return charDisplayFromMeta(key, charMeta.value[key])
+  }
+
+  /** 旧 API 兼容: 拉 char 应援色映射 (派生自 charMeta). */
+  async function loadCharColors(): Promise<Record<string, CharOshiColor>> {
+    await loadCharMeta()
     return charColors.value
   }
 
-  /** 强制刷新 char 应援色 (PoolEditView 保存后调用, 避免 BenchView 看到 stale). */
+  /** 强制刷新 char meta (PoolEditView 保存后调用, 避免 BenchView 看到 stale). */
   async function refreshCharColorsForce(): Promise<void> {
-    await refreshCharColors()
+    await refreshCharMeta()
   }
 
   /** 拉单个 polaroid 详情. 不进 cache (详情走 editor 自己的 ref). */
@@ -141,6 +207,8 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     summariesLoaded,
     tagSuggestions,
     allTagGroups,
+    charMeta,
+    charMetaLoaded,
     charColors,
     // actions
     listSummaries,
@@ -148,6 +216,8 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     listSummariesByTag,
     listAllTags,
     listAllTagGroups,
+    loadCharMeta,
+    getCharDisplay,
     loadCharColors,
     refreshCharColorsForce,
     loadPolaroid,
