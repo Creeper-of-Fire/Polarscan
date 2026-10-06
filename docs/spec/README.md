@@ -1,7 +1,7 @@
 # SPEC: spec-system（spec 文档系统）
 
 - **STATUS**: IN PROGRESS（首批 spec 落地中）
-- **LAST_UPDATED**: 2026-08-06
+- **LAST_UPDATED**: 2026-10-06
 
 ## 涉及代码
 
@@ -67,6 +67,7 @@ Polarscan 后端有相当数量的"已决策但散落在代码 / AGENTS.md / REA
 | [tag-pool](tag-pool.md) | 标签池 | IMPLEMENTED |
 | [polaroid-id-generation](polaroid-id-generation.md) | id 派生 | IMPLEMENTED |
 | [core-asset-meta-split](core-asset-meta-split.md) | core 拆 asset/meta | TODO |
+| [browse-grouping](browse-grouping.md) | 浏览页分组与组序 | IMPLEMENTED |
 
 ## 5. 不变量
 
