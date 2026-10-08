@@ -14,8 +14,8 @@
   分组 / 组序的纯逻辑在 lib/grouping.ts, 排序不变量在那里单独校验。
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NSpin, NEmpty, NSpace, NCard, NButton, NTag } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { shotDateHint } from '@/composables/usePathParse'
@@ -30,18 +30,34 @@ import {
   type SortBasis,
   type SortDir,
 } from '@/lib/grouping'
+import {
+  DEFAULT_BASIS,
+  DEFAULT_DIM,
+  parseBrowseQuery,
+  serializeBrowseQuery,
+  validDimsFrom,
+  type BrowseState,
+  type RawQuery,
+} from '@/lib/browseQuery'
 
+const route = useRoute()
 const router = useRouter()
 const store = usePolarscanStore()
 
-// prefix 顺序: char 放最前（审查主战场）, 其余按 schema 顺序
-const PREFIX_ORDER = ['char', 'shot', 'event', 'theme', 'collection', 'composite', 'moment', 'sig']
-const DEFAULT_DIM = 'char'
-// 默认依据是数量而不是名称。2026-10-06 对真实索引 (_index.yaml, 483 条) 盘过:
-// 角色维度分布高度倾斜 —— 一档 23%、次三档各约 10%、其余 40 多个名字各 1~2 张。
-// 按名称进落地是一串 1 张卡的组, 找不到实际在用的角色。
-const DEFAULT_BASIS: SortBasis = 'count'
-
+// ===== URL 是浏览页状态的唯一真值 =====
+// 下面 4 个 ref 只是 route.query 的渲染缓存, 只有那个 watcher 一处写它们。
+// handler 不直接改 ref, 而是 commit() 改 URL, 由 watcher 回灌 —— 这样后退/前进
+// 与分享链接走同一条路径, 不存在"ref 改了但 URL 没跟上"的不一致态。
+//
+// 规范化不在这里, 在 router.beforeEach: 裸 /list、非法值、同义写法都先被收敛成
+// 唯一一条规范 URL 并重写地址栏, 视图拿到的已经是规范形态, 直接渲染即可。
+// 序列化契约见 lib/browseQuery.ts, 规范见 docs/spec/browse-grouping.md § 2.6。
+//
+//   /list?dim=char&sort=count&dir=desc                      默认态
+//   /list?dim=date&sort=count&dir=desc                      切到日期维度
+//   /list?dim=char&sort=key&dir=asc                         切到按名称依据
+//   /list?dim=char&sort=count&dir=desc&tag=char:小薰          单个筛选
+//   /list?dim=shot&sort=count&dir=desc&tag=char:小薰&tag=…   多选（重复键 = AND）
 const activeDim = ref<string>(DEFAULT_DIM)
 const selectedTags = ref<Set<string>>(new Set())
 const tagGroups = ref<Record<string, string[]>>({})
@@ -51,28 +67,48 @@ const loading = ref(false)
 
 const totalCount = ref(0)
 
+const readState = (): BrowseState => parseBrowseQuery(route.query as RawQuery)
+
+/** 唯一的状态写入口: 改 URL, 由 watcher 回灌 ref。
+ *  筛选用 replace (页内细化, 别把后退键堵成一长串), 切维度用 push (确实是导航)。 */
+function commit(next: Partial<BrowseState>, mode: 'push' | 'replace'): void {
+  const merged = { ...readState(), ...next }
+  const target = { path: route.path, query: serializeBrowseQuery(merged) }
+  if (mode === 'push') void router.push(target)
+  else void router.replace(target)
+}
+
+// 唯一的 ref 写入口
+watch(
+  () => route.query,
+  () => {
+    const s = readState()
+    activeDim.value = s.dim
+    sortBasis.value = s.basis
+    sortDir.value = s.dir
+    selectedTags.value = new Set(s.tags)
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   loading.value = true
   try {
+    // tag 池多半已被 router.beforeEach 加载过, 这里命中 cache
     const [summaries, groups] = await Promise.all([
       store.listSummaries(),
       store.listAllTagGroups(),
     ])
     totalCount.value = summaries.length
     tagGroups.value = groups
-    // 初始方向取该 (维度, 依据) 组合的自然默认, 而不是写死的降序
-    sortDir.value = naturalDir(activeDim.value, sortBasis.value)
   } finally {
     loading.value = false
   }
 })
 
-/** "日期" 不是 prefix, 所以它排在所有 prefix 前面, 不参与值筛选。 */
-const sortedDims = computed(() => {
-  const known = PREFIX_ORDER.filter((p) => p in tagGroups.value)
-  const extra = Object.keys(tagGroups.value).filter((p) => !PREFIX_ORDER.includes(p))
-  return [DATE_DIM, ...known, ...extra]
-})
+/** "日期" 不是 prefix, 所以它排在所有 prefix 前面, 不参与值筛选。
+ *  与 router.beforeEach 用的是同一个函数 —— chip 行显示什么 = 守卫认可什么是同一套口径。 */
+const sortedDims = computed(() => validDimsFrom(tagGroups.value))
 
 const isDateDim = computed(() => isDateDimOf(activeDim.value))
 
@@ -97,39 +133,41 @@ function isSelected(value: string): boolean {
   return selectedTags.value.has(value)
 }
 
+// 以下 handler 都不直接改 ref —— 一律 commit() 改 URL, 由上面的 watcher 回灌。
+// 筛选用 replace (页内细化, 别把后退键堵成一长串), 切维度用 push (确实是导航)。
+
 function toggleValue(value: string) {
-  const next = new Set(selectedTags.value)
-  if (next.has(value)) next.delete(value)
-  else next.add(value)
-  selectedTags.value = next
+  const cur = readState()
+  const tags = cur.tags.includes(value) ? cur.tags.filter((t) => t !== value) : [...cur.tags, value]
+  commit({ tags }, 'replace')
 }
 
 function removeTag(tag: string) {
-  const next = new Set(selectedTags.value)
-  next.delete(tag)
-  selectedTags.value = next
+  commit({ tags: readState().tags.filter((t) => t !== tag) }, 'replace')
 }
 
 function clearFilter() {
-  selectedTags.value = new Set()
+  commit({ tags: [] }, 'replace')
 }
 
 function setDim(key: string) {
   if (key === activeDim.value) return
-  activeDim.value = key
-  // 只保留属于当前维度的筛选: 看到的筛选 = 看到的维度
-  selectedTags.value = new Set([...selectedTags.value].filter((t) => t.split(':')[0] === key))
-  sortDir.value = naturalDir(key, sortBasis.value)
+  const cur = readState()
+  // 只保留属于新维度的筛选: 看到的筛选 = 看到的维度
+  const tags = cur.tags.filter((t) => t.split(':')[0] === key)
+  // 方向回到新组合的自然默认 (丢掉旧维度下的手动覆盖)
+  commit({ dim: key, tags, dir: naturalDir(key, cur.basis) }, 'push')
 }
 
 function setBasis(basis: SortBasis) {
   if (basis === sortBasis.value) return
-  sortBasis.value = basis
-  sortDir.value = naturalDir(activeDim.value, basis)
+  const cur = readState()
+  commit({ basis, dir: naturalDir(cur.dim, basis) }, 'replace')
 }
 
 function toggleDir() {
-  sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  const cur = readState()
+  commit({ dir: cur.dir === 'desc' ? 'asc' : 'desc' }, 'replace')
 }
 
 /** 渲染时去掉 prefix (后端契约返回的是完整 tag, 但 UI 在 prefix chip 已选定的情况下,
