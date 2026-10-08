@@ -1,7 +1,7 @@
 # SPEC: spec-system（spec 文档系统）
 
 - **STATUS**: IN PROGRESS（首批 spec 落地中）
-- **LAST_UPDATED**: 2026-10-06
+- **LAST_UPDATED**: 2026-10-08
 
 ## 涉及代码
 
@@ -15,7 +15,7 @@ Polarscan 后端有相当数量的"已决策但散落在代码 / AGENTS.md / REA
 每次重构都要重新摸代码，缺乏统一归档。本项目引入 **spec-driven 工作流**：
 
 - **spec 是独立的 .md 文档**，放在 `docs/spec/`
-- 每个 spec 描述一个**完整的设计概念**，跨多个 .py 文件
+- 每个 spec 描述一个**完整的设计概念**，可以跨多个文件
 - **不靠文件系统分类**——代码保持 flat，spec 通过路径文字指向代码
 - spec 与代码**同步演化**：commit 改 spec 时改一段，改代码时同步改路径
 
