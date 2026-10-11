@@ -32,7 +32,26 @@ pnpm install
 
 ## 启动
 
-### 生产模式（推荐）
+**先看你想干什么**——这两条命令不通用，混用会让你以为改了代码没反应。
+
+### 改代码时（开发模式）
+
+```powershell
+pnpm dev
+```
+
+concurrently 同时启动两个进程：
+
+- **Vite** dev server：<http://127.0.0.1:5173>（前端 HMR，改代码即生效）
+- **FastAPI**：<http://127.0.0.1:8765>（只提供 JSON API）
+
+**浏览器打开 5173，不是 8765。** Vite 自己把 `/api`、`/thumb`、`/img`、`/pool` 等路径
+代理到 FastAPI，所以开发时后端不参与前端资源分发——`server.py` 也因此不再反向代理
+SPA（见 `docs/spec/architecture.md` 的数据流图：SPA → `frontend/dist` → StaticFiles）。
+
+开发模式下 **8765 只用来跑 API**，直接访问它的根路径拿到的是上一次 `pnpm build` 的旧产物。
+
+### 日常使用（不打算改代码）
 
 ```powershell
 # 1. 构建前端
@@ -42,20 +61,7 @@ pnpm build
 python -m apps.web.server
 ```
 
-浏览器打开 <http://127.0.0.1:8765>。
-
-### 开发模式（前端热更新）
-
-```powershell
-pnpm dev
-```
-
-concurrently 同时启动：
-
-- **Vite** dev server：<http://127.0.0.1:5173>（前端 HMR）
-- **FastAPI**：<http://127.0.0.1:8765>（JSON API + 静态资源）
-
-Vite 把 `/api`、`/thumb`、`/img`、`/pool` 等路径代理到 FastAPI。
+浏览器打开 <http://127.0.0.1:8765>，之后一直用这个地址。
 
 ## 项目结构
 

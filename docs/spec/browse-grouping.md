@@ -112,7 +112,7 @@ section 里各出现一次。这是有意的：每组因此都是完整视图（
 ```
 
 **全用 query，不用 path 段。** 筛选不是资源，拿不到一棵有意义的资源树；path 段还会被
-`server.py:485` 先拿去试 `frontend/dist` 下的同名文件。`server.py:474` 的 catch-all
+`server.py:427` 先拿去试 `frontend/dist` 下的同名文件。`server.py:418` 的 catch-all
 只吃 path 不吃 query，所以 query 方案**后端完全无感，路由表零改动**。
 
 **规范化放在 `router.beforeEach`，不放在视图里**——它是横切关注点。裸 `/list`、

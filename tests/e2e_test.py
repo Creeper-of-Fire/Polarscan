@@ -169,12 +169,16 @@ class WebEndToEndTest(unittest.TestCase):
         return asyncio.run(request_asgi(method, path, data, json_body))
 
     def test_spa_catchall(self) -> None:
-        """SPA 路由返回 index.html (无 Vite 时)；后端 JSON API 不受影响。"""
+        """SPA 路由返回 frontend/dist 的 index.html；后端 JSON API 不受影响。
+
+        后端不再反向代理 Vite dev server —— dev 走 5173，后端只服务 dist 产物。
+        所以这里钉死"不含 @vite/client"：哪天反向代理被加回来，这条会红。
+        """
         response = self.request("GET", "/")
         self.assertEqual(response.status_code, 200)
-        # dist 模式: 含 crossorigin + assets 引用; Vite 模式: 含 @vite/client
-        # 两种都包含 "<div id=\"app\">"
         self.assertIn('<div id="app">', response.text)
+        self.assertIn("/assets/", response.text)
+        self.assertNotIn("@vite/client", response.text)
 
     def test_api_polaroids_list(self) -> None:
         """GET /api/polaroids 返回 JSON summary 列表。"""

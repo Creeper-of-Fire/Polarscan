@@ -1,15 +1,17 @@
 """Polarscan web server: FastAPI + Vue SPA.
 
-启动：
+日常使用：
+    pnpm build               # 构建前端到 frontend/dist
     python -m apps.web.server
 浏览器打开 http://127.0.0.1:8765
 
 开发模式（前端热更新）：
-    终端 A: pnpm dev          # 启动 Vite (5173)
-    终端 B: python -m apps.web.server  # 自动检测到 Vite 后代理 SPA 请求到 Vite
+    pnpm dev                 # Vite (5173) + 本服务 (8765) 同时起
+浏览器打开 http://127.0.0.1:5173
 
-也可用 pnpm dev 同时跑（concurrently），但 Vite dev 端口是 5173 而本服务是 8765，
-本服务会自动检测 5173 是否可用，可用就代理过去，否则用 frontend/dist 静态产物。
+开发时前端 dev server 自己把 /api /thumb /img /pool 等代理到本服务（见
+frontend/vite.config.ts），所以本服务**不**反向代理 SPA。本服务始终只服务
+frontend/dist 的构建产物。
 """
 from __future__ import annotations
 
@@ -19,9 +21,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from polarscan.api import Polarscan
@@ -38,30 +39,6 @@ logger = logging.getLogger("polarscan.web")
 DATA_DIR = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = Path(__file__).parent
 SPA_DIR = WEB_DIR.parent.parent / "frontend" / "dist"
-VITE_DEV_URL = "http://127.0.0.1:5173"
-
-
-# ============================================================
-# 启动时探测 Vite dev server 是否可用
-# ============================================================
-def _detect_vite() -> bool:
-    """启动时探测 Vite dev server (127.0.0.1:5173) 是否可用。
-
-    如果可用，FastAPI 会把所有 SPA 请求代理到 Vite（HMR 生效）；
-    否则用 frontend/dist 静态产物。
-    """
-    try:
-        r = httpx.get(VITE_DEV_URL, timeout=1.0)
-        if r.status_code == 200:
-            logger.info(f"Vite dev detected at {VITE_DEV_URL}; SPA will be proxied there")
-            return True
-    except (httpx.HTTPError, OSError):
-        pass
-    logger.info(f"Vite dev not detected; SPA will be served from {SPA_DIR}")
-    return False
-
-
-VITE_AVAILABLE = _detect_vite()
 
 
 # ============================================================
@@ -69,8 +46,7 @@ VITE_AVAILABLE = _detect_vite()
 # ============================================================
 ps = Polarscan(DATA_DIR)
 app = FastAPI(title="Polarscan")
-if SPA_DIR.exists() and not VITE_AVAILABLE:
-    # Vite dev 模式下不挂载 dist/assets，避免冲突；dev 时由 catch-all 代理
+if SPA_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(SPA_DIR / "assets")), name="spa-assets")
 
 
@@ -437,50 +413,16 @@ async def api_append_files(pid: str, request: Request):
 
 
 # ============================================================
-# Vue SPA catch-all: dev 模式代理到 Vite，否则用 dist 静态文件
+# Vue SPA catch-all: 始终服务 frontend/dist 的构建产物
 # ============================================================
-async def _proxy_to_vite(request: Request) -> Response:
-    """把 SPA 请求代理到 Vite dev server (127.0.0.1:5173)。
-
-    Vite 自带 HMR 需要 streaming 响应（EventStream），所以用 stream + StreamingResponse。
-    """
-    url = f"{VITE_DEV_URL}{request.url.path}"
-    if request.url.query:
-        url += "?" + str(request.url.query)
-
-    # 透传 request headers (排除 hop-by-hop)
-    skip_fwd = {"host", "connection", "content-length", "transfer-encoding"}
-    fwd_headers = {k: v for k, v in request.headers.items() if k.lower() not in skip_fwd}
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=2.0)) as client:
-        try:
-            vite_req = client.build_request("GET", url, headers=fwd_headers)
-            vite_resp = await client.send(vite_req, stream=True)
-        except (httpx.HTTPError, OSError) as e:
-            logger.warning(f"Vite proxy failed: {e}")
-            return JSONResponse({"error": f"Vite dev unavailable: {e}"}, status_code=502)
-
-        # 透传 response headers (排除 hop-by-hop 和 content-length，由 Starlette 算)
-        skip_resp = {"content-length", "transfer-encoding", "connection"}
-        out_headers = {k: v for k, v in vite_resp.headers.items() if k.lower() not in skip_resp}
-
-        return StreamingResponse(
-            vite_resp.aiter_raw(),
-            status_code=vite_resp.status_code,
-            headers=out_headers,
-        )
-
-
 @app.get("/{full_path:path}", include_in_schema=False)
-async def spa_catch_all(full_path: str, request: Request):
+async def spa_catch_all(full_path: str):
     """Vue Router SPA 接管。
 
-    开发模式 (Vite 在跑): 代理到 Vite，热更新生效
-    生产模式 (dist 已构建): 用 frontend/dist 静态文件
+    只服务 frontend/dist。开发模式不走这里 —— 那是 5173 的 Vite，它自己把
+    API 代理到本服务（见 frontend/vite.config.ts）。path 先试同名静态文件，
+    命中不了就回 index.html 交给 Vue Router。
     """
-    if VITE_AVAILABLE:
-        return await _proxy_to_vite(request)
-
     if full_path:
         candidate = SPA_DIR / full_path
         if candidate.is_file():
@@ -489,9 +431,7 @@ async def spa_catch_all(full_path: str, request: Request):
     if index_html.exists():
         return FileResponse(index_html)
     return JSONResponse(
-        {
-            "error": "SPA 未构建。请先运行 `pnpm build`（生产模式）或 `pnpm dev`（开发模式，端口 5173）。"
-        },
+        {"error": "SPA 未构建。请先运行 `pnpm build`。"},
         status_code=503,
     )
 
