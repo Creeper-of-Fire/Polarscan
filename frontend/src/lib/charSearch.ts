@@ -15,7 +15,7 @@
 //
 // 纯函数 (无副作用), 与 store / props 解耦 — 便于单测.
 
-import type { CharDisplay } from '@/stores/polarscan'
+import type { TagDisplay } from '@/stores/polarscan'
 
 export type CharMatchField = 'key' | 'canonical' | 'alias'
 
@@ -59,7 +59,7 @@ function aliasBestScore(aliases: string[], qL: string): number {
   return best
 }
 
-export function scoreCharMatch(q: string, d: CharDisplay): CharMatch {
+export function scoreCharMatch(q: string, d: TagDisplay): CharMatch {
   const qL = q.toLowerCase()
   if (!qL) return { score: 0, field: null, hitCount: 0 }
 

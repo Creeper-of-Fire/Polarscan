@@ -7,11 +7,10 @@
 //   调用方永远不应该手动调"刷新".
 // - 视图层(views)只读 summaries / tagSuggestions, 改数据走 action.
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { polaroidsApi, tagsApi, poolApi } from '@/api'
+import { tagDisplayFrom, type TagDisplay } from '@/lib/tagDisplay'
 import {
-  charOshiColorFromMeta,
-  type CharOshiColor,
   type Polaroid,
   type PolaroidSummary,
 } from '@/types'
@@ -28,35 +27,11 @@ export interface AppendFilesResult {
   asset_count: number
 }
 
-/** char tag 的完整展示字段 (供 CharTag / NAutoComplete 选项渲染).
- *  core 不解析 meta 内部结构, 这里做约定的字段读取 (canonical_name / aliases /
- *  color_name / color_rgb). 缺失字段视为 null, UI 降级渲染. */
-export interface CharDisplay {
-  tag: string
-  key: string
-  canonical_name: string | null
-  aliases: string[]
-  color_rgb: string | null
-  color_name: string | null
-}
-
-/** 从 charMeta dict 里按 key 派生展示字段; 缺失视为 null. */
-function charDisplayFromMeta(key: string, meta: Record<string, unknown> | undefined): CharDisplay {
-  const m = meta
-  const canonical = typeof m?.canonical_name === 'string' && m.canonical_name.trim()
-    ? m.canonical_name.trim()
-    : null
-  const aliases = Array.isArray(m?.aliases)
-    ? (m.aliases as unknown[]).filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
-    : []
-  const colorRgb = typeof m?.color_rgb === 'string' && /^#[0-9a-fA-F]{6}$/.test(m.color_rgb)
-    ? m.color_rgb
-    : null
-  const colorName = typeof m?.color_name === 'string' && m.color_name.trim()
-    ? m.color_name.trim()
-    : null
-  return { tag: `char:${key}`, key, canonical_name: canonical, aliases, color_rgb: colorRgb, color_name: colorName }
-}
+/** tag 的展示字段派生规则本体在 lib/tagDisplay.ts —— store 只负责取数据真值,
+ *  不重复实现 "canonical || key" 的规则 (两处实现必然漂移)。
+ *  类型在这里再导出一次, 是因为 getTagDisplay / displayNameOf 的返回类型就在
+ *  这个 store 的公开面上。 */
+export type { TagDisplay }
 
 export const usePolarscanStore = defineStore('polarscan', () => {
   // ===== state (公开读, 仅 action 内部写) =====
@@ -65,23 +40,12 @@ export const usePolarscanStore = defineStore('polarscan', () => {
   const tagSuggestions = ref<string[]>([])
   // 分组字典 {prefix: [value, ...]}, ListView 按 prefix chip 切换时用
   const allTagGroups = ref<Record<string, string[]>>({})
-  // char 池完整 meta (key → {canonical_name, aliases, color_name, color_rgb, ...}).
-  // 这是 char tag 渲染 (CharTag / NAutoComplete 选项) 的元数据真值;
-  // charColors 现在只是它的派生 (向后兼容, 不再单独拉一次).
-  const charMeta = ref<Record<string, Record<string, unknown>>>({})
-  const charMetaLoaded = ref(false)
-
-  // charColors: 派生自 charMeta (只暴露 name+rgb); 旧 API 兼容, 不再单独缓存.
-  const charColors = computed<Record<string, CharOshiColor>>(() => {
-    const out: Record<string, CharOshiColor> = {}
-    for (const [k, m] of Object.entries(charMeta.value)) {
-      const c = charOshiColorFromMeta(m)
-      if (c.name || c.rgb) out[k] = c
-    }
-    return out
-  })
-  // charColorsLoaded: 派生自 charMetaLoaded (computed 反向兼容旧 ref API)
-  const charColorsLoaded = computed(() => charMetaLoaded.value)
+  // 全部 prefix 的池元数据, **以完整 tag 为键** ('char:小薰' -> meta)。
+  // 用扁平 tag 键而不是 {prefix: {key: meta}}, 是为了让 display 层一次查表就能
+  // 拿到任意 prefix 的展示字段, 调用方不必先剥前缀再决定去哪个桶。
+  // 这是所有 tag 渲染 (CharTag / 标签 chip / 浏览页组头) 的元数据真值。
+  const tagMeta = ref<Record<string, Record<string, unknown>>>({})
+  const tagMetaLoaded = ref(false)
 
   // ===== private: 缓存维护, 不 export =====
   // 失败安全: refreshSummaries 抛错时 caller (action) 不会更新 summaries,
@@ -100,14 +64,26 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     allTagGroups.value = grouped
   }
 
-  async function refreshCharMeta(): Promise<void> {
-    const items = await poolApi.index('char')
+  /** 拉全部 prefix 的池元数据。
+   *
+   *  prefix 集合取自 allTagGroups (/api/all-tags) —— 那已经是"哪些 prefix 被拍立得
+   *  用过"的现成真值, 前端不再维护第二份 prefix 名单。没有对应池桶的 prefix
+   *  (例如只被用过、从未注册的) 拉回来是空数组, 自然不产生条目。
+   *
+   *  registered-but-never-used 的桶不在这里: 它们只在池页面出现, 而池页面
+   *  自己按 prefix 拉 (PoolIndexView → poolApi.index)。 */
+  async function refreshTagMeta(): Promise<void> {
+    const groups = await listAllTagGroups()
+    const prefixes = Object.keys(groups)
+    const buckets = await Promise.all(prefixes.map((p) => poolApi.index(p)))
     const out: Record<string, Record<string, unknown>> = {}
-    for (const it of items) {
-      out[it.key] = (it.meta ?? {}) as Record<string, unknown>
-    }
-    charMeta.value = out
-    charMetaLoaded.value = true
+    prefixes.forEach((p, i) => {
+      for (const it of buckets[i] ?? []) {
+        out[`${p}:${it.key}`] = (it.meta ?? {}) as Record<string, unknown>
+      }
+    })
+    tagMeta.value = out
+    tagMetaLoaded.value = true
   }
 
   // ===== actions (公开入口, 内部维护 cache) =====
@@ -150,29 +126,28 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     return allTagGroups.value
   }
 
-  /** 拉 char 完整 meta (key → 完整 pool meta). 首次拉, 之后返回 cache. */
-  async function loadCharMeta(): Promise<Record<string, Record<string, unknown>>> {
-    if (!charMetaLoaded.value) {
-      await refreshCharMeta()
+  /** 拉全部 prefix 的 tag 池元数据 (完整 tag → pool meta). 首次拉, 之后返回 cache. */
+  async function loadTagMeta(): Promise<Record<string, Record<string, unknown>>> {
+    if (!tagMetaLoaded.value) {
+      await refreshTagMeta()
     }
-    return charMeta.value
+    return tagMeta.value
   }
 
-  /** 给定 char key 派生展示字段 (canonical_name / aliases / color_*);
-   *  缺失字段视为 null, 不抛错. meta 未加载时返回 null 字段 (UI 降级). */
-  function getCharDisplay(key: string): CharDisplay {
-    return charDisplayFromMeta(key, charMeta.value[key])
+  /** 给定完整 tag 派生展示字段; 缺失字段视为 null, display_name 回退 key.
+   *  meta 未加载时同样返回 display_name = key (UI 降级, 不会显示空白)。 */
+  function getTagDisplay(tag: string): TagDisplay {
+    return tagDisplayFrom(tag, tagMeta.value[tag])
   }
 
-  /** 旧 API 兼容: 拉 char 应援色映射 (派生自 charMeta). */
-  async function loadCharColors(): Promise<Record<string, CharOshiColor>> {
-    await loadCharMeta()
-    return charColors.value
+  /** 只要展示名 (canonical || key) —— 模板里最常见的用法, 免得先取整个对象。 */
+  function displayNameOf(tag: string): string {
+    return tagDisplayFrom(tag, tagMeta.value[tag]).display_name
   }
 
-  /** 强制刷新 char meta (PoolEditView 保存后调用, 避免 BenchView 看到 stale). */
-  async function refreshCharColorsForce(): Promise<void> {
-    await refreshCharMeta()
+  /** 强制刷新 tag 池元数据 (PoolEditView 保存后调用, 避免别处看到 stale). */
+  async function refreshTagMetaForce(): Promise<void> {
+    await refreshTagMeta()
   }
 
   /** 拉单个 polaroid 详情. 不进 cache (详情走 editor 自己的 ref). */
@@ -207,19 +182,18 @@ export const usePolarscanStore = defineStore('polarscan', () => {
     summariesLoaded,
     tagSuggestions,
     allTagGroups,
-    charMeta,
-    charMetaLoaded,
-    charColors,
+    tagMeta,
+    tagMetaLoaded,
     // actions
     listSummaries,
     reloadSummaries,
     listSummariesByTag,
     listAllTags,
     listAllTagGroups,
-    loadCharMeta,
-    getCharDisplay,
-    loadCharColors,
-    refreshCharColorsForce,
+    loadTagMeta,
+    getTagDisplay,
+    displayNameOf,
+    refreshTagMetaForce,
     loadPolaroid,
     savePolaroid,
     appendFiles,

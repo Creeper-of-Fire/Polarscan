@@ -12,7 +12,7 @@
   - 归并自 BenchView 的两段 chip UI, NewView 也走同一份
   - 内部用两个 useChipStream 实例, 但仅用于 query + 候选, 不持有 modelValue
   - 不再有 watcher / splitTags 双向同步; 数据归属 = props.modelValue
-  - char 候选自派生: 候选集 = charMeta ∪ suggestions ∩ char:; 走 lib/charSearch 的
+  - char 候选自派生: 候选集 = tagMeta ∩ char: ∪ suggestions ∩ char:; 走 lib/charSearch 的
     scoreCharMatch 加权 (key 完全 100 / canonical 完全 90 / alias 完全 85 /
     prefix 80-60 / contains 50-30 + 多字段命中 +20/字段), 多命中候选自然排前.
   - 应援色在 dropdown 表达: 命中段背景 (~20% alpha 应援色) + 左竖条 (100% 应援色,
@@ -49,7 +49,7 @@ import { useRouter } from 'vue-router'
 import { NCard, NAutoComplete, NButton, NTag, NSpace } from 'naive-ui'
 import { useChipStream } from '@/composables/useChipStream'
 import { usePolarscanStore } from '@/stores/polarscan'
-import type { CharDisplay } from '@/stores/polarscan'
+import type { TagDisplay } from '@/stores/polarscan'
 import { scoreCharMatch } from '@/lib/charSearch'
 import CharTag from './CharTag.vue'
 
@@ -67,12 +67,12 @@ const emit = defineEmits<{
 const router = useRouter()
 const store = usePolarscanStore()
 
-// char 池 meta 懒加载: 用 await 确保 NAutoComplete 第一次弹出选项时
-// store.charMeta 已就绪, 选项能拿到应援色 / canonical / aliases;
+// tag 池 meta 懒加载: 用 await 确保 NAutoComplete 第一次弹出选项时
+// store.tagMeta 已就绪, 选项能拿到应援色 / canonical / aliases;
 // 否则 dropdown 会全是中性灰 (色块未着色).
-// store 内部 dedup by charMetaLoaded, 多次调用不重复请求.
+// store 内部 dedup by tagMetaLoaded, 多次调用不重复请求.
 onMounted(async () => {
-  await store.loadCharMeta()
+  await store.loadTagMeta()
 })
 
 // ---------- 单源头派生 ----------
@@ -143,48 +143,50 @@ const sigPool = computed(() =>
 )
 
 // ---------- char NAutoComplete 选项 ----------
-// 候选源 = charMeta (registered) ∪ suggestions ∩ char: (used including unregistered).
+// 候选源 = tagMeta 中 char: 桶 (registered) ∪ suggestions ∩ char: (used including unregistered).
 // 评分 / 排序 / highlight 走 scoreCharMatch (lib/charSearch.ts).
-// 同分按 key 升序, 输出稳定.
+// 同分按 key 升序 (**不按 display_name** —— 排序必须稳定地落在标识符上, 换展示名
+// 不该改变候选顺序), 输出稳定.
 //
 // meta 未就绪时 dropdown 暂不显示, 避免"灰色 swatch 闪烁"的视觉错位 (用户
-// 看到灰 swatch 以为系统坏了, 但其实是 charMeta 还在飞). store.charMetaLoaded
-// 在 loadCharMeta 完成后变 true, computed 自动重算 → 出现带色 swatch 的候选.
+// 看到灰 swatch 以为系统坏了, 但其实是 tagMeta 还在飞). store.tagMetaLoaded
+// 在 loadTagMeta 完成后变 true, computed 自动重算 → 出现带色 swatch 的候选.
 type CharOption = {
   label: string
   value: string
-  display: CharDisplay
+  display: TagDisplay
   /** 当前查询串 (用于 highlight 渲染, 空 → 无命中段) */
   q: string
 }
 const CHAR_OPTION_LIMIT = 12
 const charOptions = computed<CharOption[]>(() => {
-  if (!store.charMetaLoaded) return []  // 等 meta, 避免灰 swatch
+  if (!store.tagMetaLoaded) return []  // 等 meta, 避免灰 swatch
   const q = charQuery.value.trim()
   if (!q) return []
 
   const prefix = 'char:'
   const selected = new Set(props.modelValue)
 
-  // 候选源: union of charMeta keys + suggestions (used-but-unregistered)
+  // 候选源: union of tagMeta 的 char: 条目 + suggestions (used-but-unregistered)
   const all = new Set<string>()
-  for (const k of Object.keys(store.charMeta)) all.add(`${prefix}${k}`)
+  for (const tag of Object.keys(store.tagMeta)) {
+    if (tag.startsWith(prefix)) all.add(tag)
+  }
   for (const s of props.suggestions) {
     if (s.startsWith(prefix)) all.add(s)
   }
 
-  type Scored = { tag: string; display: CharDisplay; score: number }
+  type Scored = { tag: string; display: TagDisplay; score: number }
   const scored: Scored[] = []
   for (const tag of all) {
     if (selected.has(tag)) continue
-    const key = tag.slice(prefix.length)
-    const display = store.getCharDisplay(key)
+    const display = store.getTagDisplay(tag)
     const m = scoreCharMatch(q, display)
     if (m.score > 0) scored.push({ tag, display, score: m.score })
   }
   scored.sort((a, b) => b.score - a.score || a.display.key.localeCompare(b.display.key))
   return scored.slice(0, CHAR_OPTION_LIMIT).map(s => ({
-    label: s.tag,
+    label: s.display.display_name,
     value: s.tag,
     display: s.display,
     q,
@@ -223,14 +225,14 @@ function highlightText(text: string, q: string, hitColor: string | null): VNode 
 // 的 teleport dropdown (之前的 :deep() + .pending class 方案不可靠, dropdown
 // 是 teleport 到 body 下, scoped style 不一定能匹配).
 //
-// 主显示文本 = canonical_name 优先, fallback 到 key (无前缀); 走 fallback 时
+// 主显示文本 = display_name (= canonical_name || key); 走 fallback 时
 // 把 key 作为搜索提示括起来. aliases 全部列出, 命中的 alias 在 highlightText
 // 内部包 <mark>.
 function renderCharLabel(option: CharOption): VNode {
   const d = option.display
   const q = option.q
   const hasCanonical = !!d.canonical_name
-  const mainText = d.canonical_name ?? d.key
+  const mainText = d.display_name
   // 应援色: 有 color_rgb 用之, 没有就 transparent (避免画无意义的灰色边框/色带).
   const color = d.color_rgb ?? 'transparent'
   // hover 背景色: 应援色 ~15% alpha (比命中段 ~20% 浅一档, 区分静态命中和 hover).
@@ -295,6 +297,19 @@ function onOtherQueryInput(v: string) {
 function goChar(key: string) {
   router.push(`/pool/char/${encodeURIComponent(key)}/edit`)
 }
+
+/** 其他标签 chip 的显示文本: 保留 prefix, 把 key 换成展示名。
+ *
+ *  这一栏是异构列表 (shot / event / sig / ... 混在一起), 少了 prefix 分不清
+ *  'shot:双人' 和 'event:双人', 所以前缀必须留 —— 与 char chip (前缀已由
+ *  上面的卡片标题给出) 的取舍不同, 是刻意的。
+ *
+ *  key 仍然换掉: registered tag 显示 canonical_name, 未注册的原样显示 key
+ *  (store 内部回退), 两者都不会出现空白。 */
+function otherTagLabel(tag: string): string {
+  const d = store.getTagDisplay(tag)
+  return d.prefix ? `${d.prefix}:${d.display_name}` : d.display_name
+}
 </script>
 
 <template>
@@ -350,7 +365,7 @@ function goChar(key: string) {
           style="margin: 2px"
           @close="otherRemove(tag)"
         >
-          {{ tag }}
+          {{ otherTagLabel(tag) }}
         </NTag>
       </div>
       <NSpace style="margin-top: 8px">

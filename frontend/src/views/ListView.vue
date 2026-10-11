@@ -12,6 +12,10 @@
     - 缺值组恒沉底
 
   分组 / 组序的纯逻辑在 lib/grouping.ts, 排序不变量在那里单独校验。
+
+  展示名 (2026-10): 组头与值 chip 显示 canonical_name || key (store.displayNameOf),
+  不显示裸标识符。**只影响渲染** —— 分组键 / 排序 / URL 全部仍用裸 tag, 改展示名
+  不会改变任何排序结果或地址栏。日期维度与缺值组不走 tag 池。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -93,11 +97,15 @@ watch(
 onMounted(async () => {
   loading.value = true
   try {
-    // tag 池多半已被 router.beforeEach 加载过, 这里命中 cache
+    // tag 池多半已被 router.beforeEach 加载过, 这里命中 cache.
+    // loadTagMeta 内部自己保证 allTagGroups 已就绪 (它是 prefix 集合的来源).
     const [summaries, groups] = await Promise.all([
       store.listSummaries(),
       store.listAllTagGroups(),
     ])
+    // 组头 / 值 chip 要显示 canonical_name, 浏览页自己加载 tag 池元数据;
+    // 未就绪时 display_name 回退 key, 不会显示空白 (只是短暂显示裸标识符).
+    void store.loadTagMeta()
     totalCount.value = summaries.length
     tagGroups.value = groups
   } finally {
@@ -169,11 +177,22 @@ function toggleDir() {
   commit({ dir: cur.dir === 'desc' ? 'asc' : 'desc' }, 'replace')
 }
 
-/** 渲染时去掉 prefix (后端契约返回的是完整 tag, 但 UI 在 prefix chip 已选定的情况下,
- *  显示 value 部分即可). 无冒号的项按 legacy 处理, 原样返回. */
-function valueDisplay(v: string): string {
-  const c = v.indexOf(':')
-  return c > 0 ? v.slice(c + 1) : v
+/** 值 chip 的显示文本: 入参是完整 tag (tagGroups 里存的就是完整 tag, 见
+ *  polarscan/api.py:all_tags_with_prefix), 去前缀只显示展示名 —— 前缀由上面的
+ *  维度 chip 已经给出, 这里重复是噪音。
+ *  展示名 = canonical_name || key (store.getTagDisplay); 无冒号的 legacy 项原样返回。 */
+function valueDisplay(tag: string): string {
+  return tag.indexOf(':') > 0 ? store.displayNameOf(tag) : tag
+}
+
+/** 组头的显示文本: 入参是 grouping 切出来的**裸 key**, 要自己拼回 prefix 才能查
+ *  tag 池。日期维度与缺值组 ('—' / '未标注日期') 不是 tag, 原样显示。
+ *
+ *  组头保留 prefix 而值 chip 不保留, 是刻意的: 组头是"当前维度下的一个分组",
+ *  前缀给出语义边界; 值 chip 已经是该维度内的选项, 再说一遍是噪音。 */
+function groupDisplay(key: string): string {
+  if (isDateDim.value) return key
+  return store.displayNameOf(`${activeDim.value}:${key}`)
 }
 
 async function reload() {
@@ -182,6 +201,9 @@ async function reload() {
     const summaries = await store.reloadSummaries()
     totalCount.value = summaries.length
     tagGroups.value = await store.listAllTagGroups()
+    // "从磁盘重载" 的语义包含 tag 池 —— canonical_name 可能刚在池页被改过,
+    // 强制重拉让组头/值 chip 立刻反映出来 (之后进入的页面也会命中这份新 cache).
+    await store.refreshTagMetaForce()
   } finally {
     loading.value = false
   }
@@ -297,7 +319,7 @@ function handleCardClick(e: MouseEvent, id: string) {
         <section v-for="g in groups" :key="g.key" class="group">
           <div class="group-head">
             <span class="group-key">
-              <span v-if="!isDateDim" class="group-prefix">{{ activeDim }}:</span>{{ g.key }}
+              <span v-if="!isDateDim" class="group-prefix">{{ activeDim }}:</span>{{ groupDisplay(g.key) }}
             </span>
             <span class="group-rule" />
             <span class="group-count">{{ g.items.length }} 张</span>

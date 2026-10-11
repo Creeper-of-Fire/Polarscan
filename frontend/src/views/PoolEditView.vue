@@ -99,10 +99,10 @@ async function save() {
   })
   if (r.ok) {
     message.success('已保存')
-    // char 应援色变更后强制刷新缓存, 回到 BenchView 不会看到 stale 颜色
-    if (props.prefix === 'char') {
-      await store.refreshCharColorsForce()
-    }
+    // tag 池元数据变更后强制刷新缓存, 回到调用方不会看到 stale 展示名 / 应援色。
+    // 不再按 prefix 分支 —— canonical_name 对所有 prefix 都可能存在, 池页面
+    // 任何一次保存都可能改到别人正在看的展示名。
+    await store.refreshTagMetaForce()
     router.push(returnTo.value)
   } else {
     message.error('保存失败')
@@ -117,10 +117,8 @@ async function deleteMeta() {
     negativeText: '取消',
     onPositiveClick: async () => {
       await poolApi.delete(props.prefix, props.tagKey)
-      // 同样刷新 char 颜色缓存 (万一删的是带颜色的 char)
-      if (props.prefix === 'char') {
-        await store.refreshCharColorsForce()
-      }
+      // 同上: 删除后刷新 tag 池缓存 (展示名 / 应援色都可能变回 fallback)
+      await store.refreshTagMetaForce()
       message.success('已删除')
       router.push(`/pool/${props.prefix}`)
     },

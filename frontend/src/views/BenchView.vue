@@ -39,7 +39,7 @@ const polaroid = editor.polaroid
 // 资产路径推断出来的候选日只做展示,不参与写回 —— 详见 handleDropReady 处的新建侧规则。
 
 // mount: 加载 summaries + tag 候选 (polaroid 由 watch 拉, 见下)
-// char 应援色由 CharTag 自己触发懒加载 (store.loadCharColors 内部 dedup)
+// tag 展示名 / char 应援色由 CharTag 自己触发懒加载 (store.loadTagMeta 内部 dedup)
 onMounted(async () => {
   await Promise.all([
     store.listSummaries(),
