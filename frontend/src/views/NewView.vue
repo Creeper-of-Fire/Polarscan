@@ -16,9 +16,8 @@ import {
 } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
-import { useShotDateResolver } from '@/composables/useShotDateResolver'
 import { useDropzone } from '@/composables/useDropzone'
-import { assetsDateRange } from '@/composables/usePathParse'
+import { collectCandidateDays } from '@/composables/usePathParse'
 import type { Asset, DroppedFile } from '@/types'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
@@ -34,10 +33,6 @@ const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 const submitting = ref(false)
 
-// 跨日拍立得不允许保留 shot_date 默认值.
-// 与 BenchView 共享同一不变量 (useShotDateResolver).
-useShotDateResolver(polaroid)
-
 // ---------- 标签候选 (过 store 拿 cache; char 应援色由 CharTag 懒加载) ----------
 onMounted(async () => {
   await store.listAllTags()
@@ -51,8 +46,8 @@ const primaryCharForId = computed<string | null>(() => {
   return null
 })
 
-// 从已拖入资产路径推断的日期范围 (用于 shot_date 快捷按钮)
-const assetDates = computed(() => assetsDateRange(polaroid.value.assets))
+// 候选拍摄日（用于 shot_date 快捷按钮）。只是推荐值，由用户点选。
+const candidateDays = computed(() => collectCandidateDays(polaroid.value.assets))
 
 // ---------- dropzone ----------
 const dz = useDropzone({
@@ -92,14 +87,15 @@ function handleDropReady(_identifiedFiles: DroppedFile[]) {
     })
   polaroid.value.assets = [...polaroid.value.assets, ...newAssets]
 
-  // 从当前全部 assets 路径推断拍立得范围的"第一天"作为 shot_date hint:
-  //   - 0 个候选 → 不填入 (空)
-  //   - 1 个候选 → 自动填入 (用户没歧义)
-  //   - ≥2 个候选 → 保持空,让用户从候选按钮里点选 (避免猜错日期段)
-  if (!polaroid.value.shot_date) {
-    const all = assetsDateRange(polaroid.value.assets)
-    if (all.length === 1) polaroid.value.shot_date = all[0]
-  }
+  // shot_date 永远不自动填。
+  //
+  // 一张拍立得只有一个确定的拍摄日期；候选只是分析得出的推荐值。把推荐值
+  // 自动写进字段，等于让"推算"冒充"事实"——那是意义撕裂，用户也无从知道
+  // 屏幕上的值是它自己填的还是系统猜的。候选按钮在下面，点一下才填。
+  //
+  // （这里曾经有 useShotDateResolver：候选 ≥2 时强制清空 shot_date，包括打开
+  //   既有拍立得时 immediate 清空。那会抹掉磁盘上已有的值——已删除，不要再加。）
+  //
   // 触发派生 id
   suggestId()
 }
@@ -251,9 +247,9 @@ async function submit() {
 
         <NFormItem label="拍摄日期（shot_date）">
           <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
-          <div v-if="assetDates.length > 0" style="margin-top: 8px">
-            <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
-            <NButton v-for="d in assetDates" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
+          <div v-if="candidateDays.length > 0" style="margin-top: 8px">
+            <span style="color: #666; font-size: 12px">候选（来自文件夹名，仅供参考）→ 点选填入：</span>
+            <NButton v-for="d in candidateDays" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
               {{ d }}
             </NButton>
           </div>

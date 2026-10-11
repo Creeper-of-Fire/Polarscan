@@ -17,9 +17,8 @@ import {
 import { usePolarscanStore } from '@/stores/polarscan'
 import { polaroidsApi } from '@/api'
 import { usePolaroidEditor } from '@/composables/usePolaroidEditor'
-import { useShotDateResolver } from '@/composables/useShotDateResolver'
 import { useDropzone } from '@/composables/useDropzone'
-import { assetsDateRange } from '@/composables/usePathParse'
+import { collectCandidateDays } from '@/composables/usePathParse'
 import PolaroidImagePreview from '@/components/PolaroidImagePreview.vue'
 import AssetListEditor from '@/components/AssetListEditor.vue'
 import PolaroidTagsEditor from '@/components/PolaroidTagsEditor.vue'
@@ -36,9 +35,8 @@ const store = usePolarscanStore()
 const editor = usePolaroidEditor()
 const polaroid = editor.polaroid
 
-// 跨日拍立得不允许保留 shot_date 默认值 (composable 内部 watch + immediate)
-// 见 useShotDateResolver 不变量说明.
-useShotDateResolver(polaroid)
+// shot_date 在本视图**只读不改**（除了用户自己输入 / 点候选按钮）。
+// 资产路径推断出来的候选日只做展示,不参与写回 —— 详见 handleDropReady 处的新建侧规则。
 
 // mount: 加载 summaries + tag 候选 (polaroid 由 watch 拉, 见下)
 // char 应援色由 CharTag 自己触发懒加载 (store.loadCharColors 内部 dedup)
@@ -86,8 +84,8 @@ async function goto(direction: 'prev' | 'next' | 'untagged') {
   }
 }
 
-// 日期段:从已绑资产路径推断,范围由父目录的日期范围语法决定 (支持跨月 2026.02.28-03.01).
-const dateRange = computed(() => assetsDateRange(polaroid.value.assets))
+// 候选拍摄日（来自资产所在文件夹名）。只是推荐值，点选才写入 shot_date。
+const candidateDays = computed(() => collectCandidateDays(polaroid.value.assets))
 
 // ---------- 编辑动作 (统一 debouncedSave) ----------
 //
@@ -285,14 +283,6 @@ const saveStateColor = computed(() => {
         <span :style="{ color: saveStateColor, fontWeight: 600 }">{{ saveStateLabel }}</span>
       </div>
 
-      <!-- 日期段 -->
-      <div v-if="dateRange.length > 0" style="margin-bottom: 12px">
-        <span style="color: #666; margin-right: 8px">资产推断日期段：</span>
-        <NButton v-for="d in dateRange" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
-          {{ d }}
-        </NButton>
-      </div>
-
       <!-- Dropzone（追加） -->
       <section
         class="dropzone-section"
@@ -375,9 +365,9 @@ const saveStateColor = computed(() => {
           <!-- 拍摄日期 -->
           <NCard title="拍摄日期（shot_date）" style="margin-top: 12px">
             <NInput :value="polaroid.shot_date || ''" placeholder="YYYY-MM-DD" @input="(v: string) => onShotDateInput(v)" />
-            <div v-if="dateRange.length > 0" style="margin-top: 8px">
-              <span style="color: #666; font-size: 12px">资产推断 → 点选填入：</span>
-              <NButton v-for="d in dateRange" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
+            <div v-if="candidateDays.length > 0" style="margin-top: 8px">
+              <span style="color: #666; font-size: 12px">候选（来自文件夹名，仅供参考）→ 点选填入：</span>
+              <NButton v-for="d in candidateDays" :key="d" size="small" type="primary" ghost @click="applyDate(d)">
                 {{ d }}
               </NButton>
             </div>

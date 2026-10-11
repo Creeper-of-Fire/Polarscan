@@ -15,6 +15,7 @@
     "isolatedModules": true,
     "useDefineForClassFields": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "baseUrl": ".",
     "paths": {

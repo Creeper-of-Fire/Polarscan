@@ -18,7 +18,7 @@
 //
 // 规范位置: docs/spec/browse-grouping.md § 2.6 / § 3
 
-import { DATE_DIM, naturalDir, type SortBasis, type SortDir } from './grouping'
+import { DATE_DIM, naturalDir, type SortBasis, type SortDir } from './grouping.ts'
 
 export { DATE_DIM }
 

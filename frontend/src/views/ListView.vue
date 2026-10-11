@@ -18,7 +18,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NSpin, NEmpty, NSpace, NCard, NButton, NTag } from 'naive-ui'
 import { usePolarscanStore } from '@/stores/polarscan'
-import { shotDateHint } from '@/composables/usePathParse'
 import SingleImagePreview from '@/components/SingleImagePreview.vue'
 import {
   DATE_DIM,
@@ -322,8 +321,7 @@ function handleCardClick(e: MouseEvent, id: string) {
                 <div style="padding: 8px 12px">
                   <code style="font-size: 12px">{{ s.id }}</code>
                   <div style="margin-top: 4px; font-size: 12px; color: #666">
-                    {{ s.shot_date || (shotDateHint(s.id) || '—') }}
-                    <span v-if="!s.shot_date && shotDateHint(s.id)" style="color: #999">（由 id 推导）</span>
+                    {{ s.shot_date || '—' }}
                   </div>
                 </div>
               </a>

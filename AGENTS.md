@@ -57,8 +57,9 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 | [api-facade](docs/spec/api-facade.md) | Polarscan 写入入口 + RLock | IMPLEMENTED |
 | [library-root-semantics](docs/spec/library-root-semantics.md) | library_root 字段归属（应用层不直读） | IMPLEMENTED |
 | [browse-grouping](docs/spec/browse-grouping.md) | 浏览页分组与组序（纯前端不变量） | IMPLEMENTED |
+| [shot-date-semantics](docs/spec/shot-date-semantics.md) | 拍摄日期语义（候选日不自动填） | IMPLEMENTED |
 
-完整 15 篇索引见 [docs/spec/README.md](docs/spec/README.md)。spec 系统的同步迭代规则与守卫见该 README。
+完整 16 篇索引见 [docs/spec/README.md](docs/spec/README.md)。spec 系统的同步迭代规则与守卫见该 README。
 
 ## 不在本文件
 

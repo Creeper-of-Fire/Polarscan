@@ -254,10 +254,8 @@ naive-ui / router 无感知。
 
 ## 5. 演进约束
 
-- **id 格式债不得泄漏到排序键**。21/483 的 id 不符合 `{日期}_{角色}_{6hex}`，
-  其中 5 条是日期区间（`2026-03-06-15--` = 3/6~3/15）。4 处 `shot_date` 与 id 推导
-  冲突，但那是语义性的不是数据错（区间拍的记的是末日）。排序键因此固定用
-  `shot_date` 字段而非 id 字典序，「按 id 排序 ≡ 按日期排序」在真实数据上不成立。
+- 排序键只用 `shot_date` 字段。它是唯一表示**拍摄日期**的字段；id 里的日期只是当初
+  批量入库时图省事留下的（也可以整个换成 GUID，行为不变），**不是契约，不参与解析**。
 - 改任一不变量（组内顺序 / 缺值组规则 / 方向默认值 / 组序作用域 / URL 编码）需同步改
   `grouping.ts` 或 `browseQuery.ts` 的注释、本 spec § 2 与 § 3、以及 `ListView.vue`。
 - **`ListView` 里的 4 个 ref 只能是 `route.query` 的缓存**，不得在 handler 里直接赋值。
@@ -279,5 +277,4 @@ naive-ui / router 无感知。
 ## 6. 引用
 
 - [architecture](architecture.md)：frontend 为一等模块；浏览路径只 stat SSD
-- [polaroid-id-generation](polaroid-id-generation.md)：id 格式与日期区间的由来
 - [cold-data-gateway](cold-data-gateway.md)：浏览页不接触冷盘的原因
