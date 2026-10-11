@@ -45,11 +45,15 @@ concurrently 同时启动两个进程：
 - **Vite** dev server：<http://127.0.0.1:5173>（前端 HMR，改代码即生效）
 - **FastAPI**：<http://127.0.0.1:8765>（只提供 JSON API）
 
-**浏览器打开 5173，不是 8765。** Vite 自己把 `/api`、`/thumb`、`/img`、`/pool` 等路径
-代理到 FastAPI，所以开发时后端不参与前端资源分发——`server.py` 也因此不再反向代理
+**浏览器打开 5173，不是 8765。** 开发时后端不参与前端资源分发——`server.py` 也因此不再反向代理
 SPA（见 `docs/spec/architecture.md` 的数据流图：SPA → `frontend/dist` → StaticFiles）。
 
 开发模式下 **8765 只用来跑 API**，直接访问它的根路径拿到的是上一次 `pnpm build` 的旧产物。
+
+Vite 只代理**真后端端点**：`/api`、`/polaroid`、`/thumb`、`/img`、`/reload`，以及 `/pool` 的
+POST 表单。SPA 路由（`/`、`/list`、`/bench/:pid`、`/new`、`/pool/*` 的 GET）**故意不代理**——
+Vite 的 proxy 跑在 SPA fallback 之前，一旦代理就会拿到 8765 的旧 dist HTML，白屏。
+所以 5173 上可以随便刷新、随便深链。改这份名单前先对 `apps/web/server.py` 的路由表核一遍。
 
 ### 日常使用（不打算改代码）
 
@@ -95,7 +99,7 @@ frontend/                # Vue SPA (pnpm 子包)
       usePolaroidEditor.ts  # Pinia ↔ page 适配层(编辑 session)
     api/                 # fetch 封装 + 按域分组的端点
     router/              # Vue Router 表
-  vite.config.ts         # proxy /api /thumb /img /pool 等到 :8765
+  vite.config.ts         # dev 代理: 只转发真后端端点到 :8765 (SPA 路由不代理)
   package.json
 
 tests/                   # 隔离运行的核心与端到端测试
