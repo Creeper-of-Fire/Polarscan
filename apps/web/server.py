@@ -20,6 +20,7 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -410,6 +411,32 @@ async def api_append_files(pid: str, request: Request):
         raise HTTPException(409, f"读取文件失败: {e}")
 
     return {"pid": polaroid.id, "asset_count": len(polaroid.assets)}
+
+
+# ============================================================
+# ingest: 存储区扫描（批量导入工作流）
+# ============================================================
+@app.post("/api/ingest/scan")
+def api_ingest_scan():
+    """存储区扫描（explicit gesture）：发现未入库 PNG，产出 hash + 缩略图。
+
+    纯 IO 无判定——正反判定由前端围绕缩略图完成（docs/spec/ingest-scan.md § 2.3）。
+    不写 yaml：落库由前端逐卡 PUT 完成。扫描耗时与新增文件量成正比（冷盘读）。
+    """
+    result = ps.ingest_scan()
+    return {
+        "new": [
+            {
+                "path": item.path,
+                "hash": item.hash,
+                "thumb_url": f"/thumb?path={quote(item.path)}&hash={item.hash}",
+                "dup_pid": item.dup_pid,
+            }
+            for item in result.new
+        ],
+        "skipped_known": result.skipped_known,
+        "errors": [asdict(e) for e in result.errors],
+    }
 
 
 # ============================================================

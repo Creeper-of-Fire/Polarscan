@@ -23,6 +23,7 @@ from .cold import (
 from .find_candidates import find_candidates_by_path
 from .library_resolver import Candidate, Triple, identify_candidates
 from .id_gen import make_polaroid_id, parse_primary_char
+from .ingest import IngestError, IngestNewItem, IngestScanResult, scan_library
 
 __all__ = [
     "Polaroid",
@@ -50,4 +51,8 @@ __all__ = [
     "identify_candidates",
     "make_polaroid_id",
     "parse_primary_char",
+    "IngestError",
+    "IngestNewItem",
+    "IngestScanResult",
+    "scan_library",
 ]

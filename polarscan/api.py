@@ -17,10 +17,12 @@ from typing import Any, Optional
 from .core import (
     Asset,
     Polaroid,
+    IngestScanResult,
     list_polaroids,
     make_polaroid_id,
     parse_primary_char,
     read_index,
+    scan_library,
     tag_prefix,
     tag_value,
     write_index,
@@ -307,6 +309,16 @@ class Polarscan:
         with self._lock:
             target = f"{prefix}:{value}"
             return [p for p in list_polaroids(self._data) if target in p.tags]  # noqa: E501
+
+    # ---- ingest: 存储区扫描（发现未入库文件，不写 yaml） ----
+    def ingest_scan(self) -> IngestScanResult:
+        """单次扫描 library_root，产出新文件的 hash 与缩略图（explicit gesture）。
+
+        语义见 docs/spec/ingest-scan.md § 2.2：纯 IO 无判定，不修改索引；
+        落库由应用层逐卡 PUT 完成。锁住 `_data` 是为了遍历期间索引不被并发修改。
+        """
+        with self._lock:
+            return scan_library(self._data, self.data_dir)
 
     # ---- drop 工作流: 追加 / 编辑 (/new 走 form 提交, 不走 API) ----
 
