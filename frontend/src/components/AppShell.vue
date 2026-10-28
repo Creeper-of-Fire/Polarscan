@@ -13,6 +13,7 @@ const activeKey = computed(() => {
   const p = route.path
   if (p === '/list' || p === '/') return 'list'
   if (p.startsWith('/new')) return 'new'
+  if (p.startsWith('/ingest')) return 'ingest'
   if (p.startsWith('/bench')) return 'bench'
   if (p.startsWith('/pool/char')) return 'pool-char'
   if (p.startsWith('/pool/event')) return 'pool-event'
@@ -25,6 +26,7 @@ const activeKey = computed(() => {
 const menuOptions: MenuOption[] = [
   { label: () => h(RouterLink, { to: '/list' }, () => '浏览'), key: 'list' },
   { label: () => h(RouterLink, { to: '/new' }, () => '新建'), key: 'new' },
+  { label: () => h(RouterLink, { to: '/ingest' }, () => '批量入库'), key: 'ingest' },
   { type: 'divider', key: 'd1' },
   { label: () => h(RouterLink, { to: '/pool/char' }, () => '角色池'), key: 'pool-char' },
   { label: () => h(RouterLink, { to: '/pool/event' }, () => '事件池'), key: 'pool-event' },

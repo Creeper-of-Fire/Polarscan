@@ -132,6 +132,25 @@ export const dropApi = {
   },
 }
 
+export interface IngestScanItemDto {
+  path: string
+  hash: string
+  thumb_url: string
+  dup_pid: string | null
+}
+
+export const ingestApi = {
+  /** 存储区扫描（explicit gesture）：发现未入库 PNG，后端产出 hash + 缩略图。
+   * 耗时与新增文件量成正比（冷盘读）。判定在前端完成。 */
+  scan(): Promise<{
+    new: IngestScanItemDto[]
+    skipped_known: number
+    errors: Array<{ path: string; reason: string }>
+  }> {
+    return api.postJson('/api/ingest/scan', {})
+  },
+}
+
 export const systemApi = {
   reload(): Promise<{ ok: boolean }> {
     return api.postForm('/reload', {})
