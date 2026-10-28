@@ -37,6 +37,11 @@ from .asset_thumb import (
     thumb_path_for,
 )
 
+# 扫描件像素上限：库内 PNG 是自产扫描件，可达 1.4 亿像素（2026.10 批次实测
+# 13482x10495 ≈ 1.42e8），超过 Pillow 默认 8947 万的 DecompressionBomb 限制。
+# 库内文件可信（本地扫描产出，非不可信来源），关闭炸弹防护。
+Image.MAX_IMAGE_PIXELS = None
+
 
 __all__ = [
     "compute_hash",
