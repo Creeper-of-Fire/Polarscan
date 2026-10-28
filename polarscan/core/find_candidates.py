@@ -36,7 +36,7 @@ def find_candidates_by_path(
     行为：
     - 直接从传入的 data 提取 library_root——不重新读 yaml，避免每次调用 IO
     - library_root 缺失或为空 → 返回空结果集（不抛错）—— 这是 drop 工作流的
-      优雅降级：没 bootstrap 过实物根时仍可工作（仅 by_hash 命中，无路径反查）
+      优雅降级：yaml 未设置实物根时仍可工作（仅 by_hash 命中，无路径反查）
 
     注：本函数不接触冷盘——只 stat 实物根下的 PNG 文件名（不读文件内容）。
     """

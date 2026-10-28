@@ -62,7 +62,7 @@ polarscan/core/
 - 新 import（推荐）：`from polarscan.core.asset import Asset, cold` / `from polarscan.core.meta import Polaroid, storage`
 
 约束：
-- 实物层不导入 yaml schema 字段（除 bootstrap 时读取 `library_root`）
+- 实物层不导入 yaml schema 字段（library_root 由元数据层 yaml 顶层承载，手工维护）
 - 元数据层不导入冷盘接触面（除 `Polaroid.assets` 类型引用）
 - `apps/web/server.py` 优先用新 import（明示拆分边界）
 

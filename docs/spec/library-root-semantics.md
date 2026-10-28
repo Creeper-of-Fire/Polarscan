@@ -1,12 +1,12 @@
 # SPEC: library-root-semantics（library_root 字段归属）
 
 - **STATUS**: IMPLEMENTED
-- **LAST_UPDATED**: 2026-08-06
+- **LAST_UPDATED**: 2026-10-28
 
 ## 涉及代码
 
 - 字段定义：`polarscan/core/storage.py:_default`（yaml 顶层字段）
-- 字段 bootstrap：`_bootstrap.py`（一次性脚本，不入 git）
+- 字段写入：yaml 顶层字段由用户手工编辑（无专门工具，见 § 2）
 - 应用层入口：`polarscan/core/find_candidates.py:find_candidates_by_path`（封装 library_root 访问）
 - 数据视图：`polarscan/api.py:Polarscan.data`（应用层只读视图）
 - 路径反查实现：`polarscan/core/library_resolver.py:identify_candidates`
@@ -18,15 +18,16 @@
 
 ## 2. 当前状态
 
-- 字段由 `_bootstrap.py` 一次性脚本写入 yaml（不在仓库内）
-- 默认值：`storage.py:_default` 让 `library_root` 等于 `data_dir` 自身（bootstrap 前 fallback）
+- 字段是 yaml 顶层字段，由用户手工编辑 `_index.yaml` 写入（历史上的 `_bootstrap.py`
+  一次性脚本已于 2026-10-28 移除，其写入职责回归手工编辑）
+- 默认值：`storage.py:_default` 让 `library_root` 等于 `data_dir` 自身（未设置时 fallback）
 - 运行时读取：**应用层不直接读 `library_root` 字段**——通过 `core.find_candidates_by_path(ps.data, queries)` 让 core 内部提取
 
 ## 3. 设计
 
 ### 字段归属
 
-- `library_root` 是 yaml 顶层字段——bootstrap 脚本写入一次
+- `library_root` 是 yaml 顶层字段——由用户手工编辑维护
 - 运行时由 core 实物层封装；应用层不得直读 schema 字段
 
 ### 接口契约
@@ -62,7 +63,7 @@ result = find_candidates_by_path(ps.data, [qt])
 
 ## 5. 不变量
 
-- `library_root` 是 yaml 顶层字段——bootstrap 脚本写入一次
+- `library_root` 是 yaml 顶层字段——由用户手工编辑维护（无专门写入工具）
 - 运行时由 core 实物层封装；应用层不得直读 schema 字段
 - 多个 data_dir 共享同一 `library_root` 是允许的（未来的多库支持）
 

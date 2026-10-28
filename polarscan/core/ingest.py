@@ -5,7 +5,7 @@ explicit gesture 语义：由用户点击"扫描"触发（HTTP `POST /api/ingest
 
 - **不写 yaml**——只发现与产出（hash / 缩略图），不修改索引；落库由前端逐卡 PUT 完成
 - 冷盘接触全部走 cold gate（`compute_hash` + `make_thumb_if_missing`）
-- path 对比用 `resolve()` 后的绝对路径——与 `_bootstrap.py` 写入 yaml 的形式对齐
+- path 对比用 `resolve()` 后的绝对路径——与 yaml 中既有资产 path 的存储形式对齐
 - 正反判定不在这里：判定由前端围绕缩略图完成（见 docs/spec/ingest-scan.md § 2.3）
 """
 from __future__ import annotations

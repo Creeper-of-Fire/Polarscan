@@ -46,8 +46,8 @@ class Polarscan:
     `F:\\相册\\...\\img.png`，因此运行时不需要 `library_root`。
     只有执行一次性扫描的初始化脚本时，才需要提供原图根目录作为扫描起点。
 
-    `library_root` 字段是 yaml schema 现成的——bootstrap 时由 `_bootstrap.py`
-    写入，运行时被 `apps/web/` 用于路径发现。
+    `library_root` 字段是 yaml schema 现成的——由用户手工编辑 `_index.yaml` 维护
+    （历史上的 bootstrap 脚本已移除），运行时被 `apps/web/` 用于路径发现。
     """
 
     def __init__(self, data_dir: str | Path):
