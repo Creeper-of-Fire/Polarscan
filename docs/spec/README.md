@@ -69,6 +69,7 @@ Polarscan 后端有相当数量的"已决策但散落在代码 / AGENTS.md / REA
 | [core-asset-meta-split](core-asset-meta-split.md) | core 拆 asset/meta | TODO |
 | [browse-grouping](browse-grouping.md) | 浏览页分组与组序 | IMPLEMENTED |
 | [shot-date-semantics](shot-date-semantics.md) | 拍摄日期语义 + 候选日不自动填 | IMPLEMENTED |
+| [ingest-scan](ingest-scan.md) | 存储区扫描 + 连连看批量入库 | IN PROGRESS |
 
 ## 5. 不变量
 

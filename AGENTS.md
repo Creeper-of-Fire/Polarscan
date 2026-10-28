@@ -39,6 +39,7 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 - **业务字段进 dataclass schema**（人名 / 事件名 / 评分等）：被否决。一律塞进 `metadata` 字典透传，core 不解析其内部结构。
 - **core 引入数据库 / ORM / 复杂校验**：被否决。core 是单文件 YAML + 透传，保持极简。
 - **为加速查询（`find_by_hash` / `find_by_path` / drop 的 `candidates`）建跨 yaml 的内存倒排索引、或为冷盘结果建缓存**：被否决。冷盘必须保持休眠（机械盘会因唤醒降低寿命 + 引入卡顿；NAS / 网络共享的网络握手延迟高且不可控），索引会让写失效状态机变复杂、把"内存副本 + 原子写"的一致性边界破坏掉。任何形式的"启动时扫描冷盘"或"监听冷盘变更"都是对架构的破坏。加速只能走"减少 explicit gesture 的次数"，例如 PUT 时前端已带 hash 后端就零冷盘读。
+- **从文件名 / 内嵌时间戳 / 文件系统时间出发对扫描件内容做任何判断**：被否决。文件名（含时间戳）与 mtime 不携带内容语义——该文件名称可能为扫描仪自动生成/外部下载/拍摄等任意来源，翻面 / 重扫 / 补扫的时机无规律，文件之间的时间间隔/日期与其实质内容没有因果关系。**扫描仪一次只扫一面**：正反面在时间轴上相隔任意长——可能隔几天、可能补扫、可能跨批次，扫描时间序列不携带任何配对信息，**连弱信号 / 辅助证据都不构成**；任何"相邻扫描的一张大概率是另一面"的推理都是错的。内容判定、扫描件配对、拍摄日期推断等一律不得以文件名或mtime时间序列为依据。合法依据只有两个：批次分组 = **文件夹名称（因其来自人类手工分类）**；内容判定= **图像像素本身**。适用于一切现在与未来的导入 / 配对 / 分类工具。
 
 ### 已采纳但非平凡的架构保证
 
@@ -58,8 +59,9 @@ core 是 Polarscan 的算法 + schema 真相源。它的"无知"是刻意的、*
 | [library-root-semantics](docs/spec/library-root-semantics.md) | library_root 字段归属（应用层不直读） | IMPLEMENTED |
 | [browse-grouping](docs/spec/browse-grouping.md) | 浏览页分组与组序（纯前端不变量） | IMPLEMENTED |
 | [shot-date-semantics](docs/spec/shot-date-semantics.md) | 拍摄日期语义（候选日不自动填） | IMPLEMENTED |
+| [ingest-scan](docs/spec/ingest-scan.md) | 存储区扫描 + 连连看批量入库 | IN PROGRESS |
 
-完整 16 篇索引见 [docs/spec/README.md](docs/spec/README.md)。spec 系统的同步迭代规则与守卫见该 README。
+完整 17 篇索引见 [docs/spec/README.md](docs/spec/README.md)。spec 系统的同步迭代规则与守卫见该 README。
 
 ## 不在本文件
 
