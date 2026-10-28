@@ -3,7 +3,7 @@
 
   职责:
   - v-model 双向绑定资产列表 (modelValue / update:modelValue)
-  - 每行: thumb + role + captured_at + device + remove
+  - 每行: thumb + role + device + remove
   - 完全不知道 caller 是 "新建" 还是 "编辑", 也不知道何时落库
   - 添加走 caller (dropzone 决定是 append_files 还是直接 mutate)
 

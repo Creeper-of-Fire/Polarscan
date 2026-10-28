@@ -115,7 +115,7 @@ tests/                   # 隔离运行的核心与端到端测试
   拉数据 / 调 API / 同步状态;page 通过 `polaroid` ref 直接 v-model 编辑。
 - **page** (BenchView / NewView / ListView): 纯 form UI,不直接碰 API / Pinia。
 
-AssetModal 已删除——编辑 asset 元数据(role / captured_at / device)由通用
+AssetModal 已删除——编辑 asset 元数据(role / device)由通用
 表单编辑器承担,后续迭代。
 
 ## JSON API（Vue SPA 使用）

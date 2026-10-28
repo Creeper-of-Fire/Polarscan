@@ -339,7 +339,7 @@ const saveStateColor = computed(() => {
               @update:model-value="scheduleSave"
             />
             <small style="display: block; margin-top: 8px; color: #999">
-              改 role / captured_at / device / 删 asset 都会自动保存 (debounce 0.6s);
+              改 role / device / 删 asset 都会自动保存 (debounce 0.6s);
               加 path 用上方拖入区。
             </small>
           </NCard>

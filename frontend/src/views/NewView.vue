@@ -4,7 +4,7 @@
   数据流:
     usePolaroidEditor()    → 极简空 polaroid (id='', assets=[]) + save action
     useDropzone            → 拖入文件 → handleDropReady 追加到 polaroid.assets
-    AssetListEditor        → v-model 绑 polaroid.assets, 提供 role/captured_at/device 编辑
+    AssetListEditor        → v-model 绑 polaroid.assets, 提供 role/device 编辑
     PolaroidImagePreview   → 预览 (by-path, 不依赖 polaroid 是否索引)
     PolaroidTagsEditor     → 统一角色 + 其他标签 (与 BenchView 共享; 归并后 char 加得上去)
 -->
